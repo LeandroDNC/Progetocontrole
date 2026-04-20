@@ -1,0 +1,46 @@
+/* ══════════════════════════════════════
+   EclesiaSync CSS v3.1 — Additions
+   Frequência + Dropdown Labels
+══════════════════════════════════════ */
+
+/* ─ DROPDOWN LABEL (grupos no menu de eventos) ─ */
+.dropdown-label {
+  font-size:.62rem;
+  font-weight:700;
+  color:var(--txt3);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  padding:10px 16px 4px;
+  border-top:1px solid var(--bdr2);
+  margin-top:2px;
+}
+.dropdown-label:first-child { border-top:none; margin-top:0; }
+.dropdown-menu { max-height:400px; overflow-y:auto; }
+
+/* ─ FREQUÊNCIA ─ */
+.freq-bar-wrap {
+  flex:1;
+  height:7px;
+  background:rgba(255,255,255,.06);
+  border-radius:99px;
+  overflow:hidden;
+  min-width:60px;
+}
+.freq-bar {
+  height:100%;
+  border-radius:99px;
+  transition:width .5s cubic-bezier(.4,0,.2,1);
+}
+.freq-dot {
+  display:inline-block;
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  margin-right:4px;
+  vertical-align:middle;
+}
+
+/* Ajuste de tabela para linha de frequência em mobile */
+@media(max-width:640px) {
+  .freq-bar-wrap { min-width:80px; }
+}
