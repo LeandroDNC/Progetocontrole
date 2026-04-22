@@ -1,0 +1,1321 @@
+/* ═══════════════════════════════════════════════════════════
+      EclesiaSync · JavaScript v3.2
+      + filtrar_setor_dashboard (setor fixo por padrão)
+      + visualizar_resumo_financeiro
+      + Frequência: fix cross-setor + Excel export
+      + RBAC: criação de roles customizadas
+      + Responsividade corrigida
+   ═══════════════════════════════════════════════════════════ */
+
+const SUPABASE_URL = 'https://xmemvwegmzykfdimnqbc.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtZW12d2VnbXp5a2ZkaW1ucWJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0Nzc1MzEsImV4cCI6MjA5MjA1MzUzMX0.xL2KwbcFLPm8h8Ew3iTmH5WXTaGm_UYp_XIOd-4NX8Q';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── HELPERS ──────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const q = t => db.from(t);
+const AVATAR_COLORS = ['#3b82f6','#8b5cf6','#14b8a6','#f43f5e','#f59e0b','#06b6d4','#ec4899','#10b981'];
+const avatarColor = n => AVATAR_COLORS[(n||'A').charCodeAt(0) % AVATAR_COLORS.length];
+const initials = n => (n||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();
+const escHtml = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const fmtMoney = v => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0);
+const fmtDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—';
+const toast = (msg, icon='success') => Swal.fire({ toast:true, position:'top-end', icon, title:msg, showConfirmButton:false, timer:3000, timerProgressBar:true, background:'#111827', color:'#f1f5f9', iconColor:icon==='success'?'#14b8a6':icon==='info'?'#3b82f6':'#f43f5e' });
+const confirmDialog = (title,text) => Swal.fire({ title, text, icon:'warning', showCancelButton:true, confirmButtonText:'Confirmar', cancelButtonText:'Cancelar' });
+const loadingPage = () => `<div class="loading-page"><div class="spinner"></div><span>Carregando dados...</span></div>`;
+const roleCls = r => ({'admin':'role-admin','dirigente':'role-dirigente','adjunto':'role-adjunto','usuario':'role-usuario'}[r]||'role-usuario');
+
+// ── ESTADO ───────────────────────────────────────────────────
+let currentUser = null;
+let currentPage = 'dashboard';
+let sidebarCollapsed = false;
+let mobileOpen = false;
+let navState = { view:'setores', setor:null, cong:null };
+let activeRole = 'admin';
+let chartInstances = {};
+let userSearch = '';
+let setorSearch = '';
+let permissionsCache = {};
+let currentUserSetor = null;
+let relFiltroInicio = '';
+let relFiltroFim = '';
+let freqFiltroInicio = '';
+let freqFiltroFim = '';
+let freqSetorFiltro = '';
+
+// ── SETOR ATIVO NO DASHBOARD / RELATÓRIOS ────────────────────
+// Sempre começa com o setor do usuário; só muda se tiver filtrar_setor_dashboard
+let dashSetorFiltro = null; // null = usa setor do user; string = id de outro setor
+let relSetorFiltro  = null;
+
+const CARGOS = ['Pastor Local','Pastor Adjunto','Presbítero','Evangelista','Diácono','Adjunto','Dirigente','Vice-Dirigente','Secretária','Auxiliar','Membro'];
+const REGIOES = ['Abreu e Lima','Afogados da Ingazeira','Afrânio','Agrestina','Água Preta','Águas Belas','Alagoinha','Aliança','Altinho','Amaraji','Angelim','Araçoiaba','Araripina','Arcoverde','Barra de Guabiraba','Barreiros','Belém de Maria','Belém do São Francisco','Belo Jardim','Betânia','Bezerros','Bodocó','Bom Conselho','Bom Jardim','Bonito','Brejão','Brejinho','Brejo da Madre de Deus','Buenos Aires','Buíque','Cabo de Santo Agostinho','Cabrobó','Cachoeirinha','Caetés','Calçado','Calumbi','Camaragibe','Camocim de São Félix','Camutanga','Canhotinho','Capoeiras','Carnaíba','Carnaubeira da Penha','Carpina','Caruaru','Casinhas','Catende','Cedro','Chã de Alegria','Chã Grande','Condado','Correntes','Cortês','Cumaru','Cupira','Custódia','Dormentes','Escada','Exu','Feira Nova','Fernando de Noronha','Ferreiros','Flores','Floresta','Frei Miguelinho','Gameleira','Garanhuns','Glória do Goitá','Goiana','Granito','Gravatá','Iati','Ibimirim','Ibirajuba','Igarassu','Iguaracy','Ilha de Itamaracá','Inajá','Ingazeira','Ipojuca','Ipubi','Itacuruba','Itaíba','Itambé','Itapetim','Itapissuma','Itaquitinga','Jaboatão dos Guararapes','Jaqueira','Jataúba','Jatobá','João Alfredo','Joaquim Nabuco','Jucati','Jupi','Jurema','Lagoa do Carro','Lagoa do Itaenga','Lagoa do Ouro','Lagoa dos Gatos','Lagoa Grande','Lajedo','Limoeiro','Macaparana','Machados','Manari','Maraial','Mirandiba','Moreilândia','Moreno','Nazaré da Mata','Olinda','Orobó','Orocó','Ouricuri','Palmares','Palmeirina','Panelas','Paranatama','Parnamirim','Passira','Paudalho','Paulista','Pedra','Pesqueira','Petrolândia','Petrolina','Poção','Pombos','Primavera','Quipapá','Quixaba','Recife','Riacho das Almas','Ribeirão','Rio Formoso','Sairé','Salgadinho','Salgueiro','Saloá','Sanharó','Santa Cruz','Santa Cruz da Baixa Verde','Santa Cruz do Capibaribe','Santa Filomena','Santa Maria da Boa Vista','Santa Maria do Cambucá','Santa Terezinha','São Benedito do Sul','São Bento do Una','São Caitano','São João','São Joaquim do Monte','São José da Coroa Grande','São José do Belmonte','São José do Egito','São Lourenço da Mata','São Vicente Férrer','Serra Talhada','Serrita','Sertânia','Sirinhaém','Solidão','Surubim','Tabira','Tacaimbó','Tacaratu','Tamandaré','Taquaritinga do Norte','Terezinha','Terra Nova','Timbaúba','Toritama','Tracunhaém','Trindade','Triunfo','Tupanatinga','Tuparetama','Venturosa','Verdejante','Vertente do Lério','Vertentes','Vicência','Vitória de Santo Antão','Xexéu'];
+
+// ─ TIPOS DE EVENTOS ──────────────────────────────────────────
+const TIPOS_EVENTO = {
+  'culto':                    {label:'Culto',                                    grupo:'Principal',   icon:'⛪', financeiro:true,  evangelismo:false},
+  'evento':                   {label:'Evento Genérico',                          grupo:'Principal',   icon:'🎉', financeiro:false, evangelismo:false},
+  'saida':                    {label:'Saída Evangelística',                      grupo:'Principal',   icon:'🚶', financeiro:false, evangelismo:true},
+  'visita_enfermos':          {label:'Visita aos Enfermos',                      grupo:'Visitas',     icon:'🏥', financeiro:false, evangelismo:false},
+  'visita_desviados':         {label:'Visita aos Desviados',                     grupo:'Visitas',     icon:'🔍', financeiro:false, evangelismo:false},
+  'visita_detidos':           {label:'Visita aos Detidos',                       grupo:'Visitas',     icon:'🔒', financeiro:false, evangelismo:false},
+  'visita_convertidos':       {label:'Visita aos Novos Convertidos',             grupo:'Visitas',     icon:'✝',  financeiro:false, evangelismo:false},
+  'visita_umadalpe':          {label:'Visita a outras UMADALPE',                 grupo:'Visitas',     icon:'🤝', financeiro:false, evangelismo:false},
+  'visita_recebida_umadalpe': {label:'Visitas Recebidas de UMADALPE',            grupo:'Visitas',     icon:'🏠', financeiro:false, evangelismo:false},
+  'visita_coordenacao':       {label:'Visita da Coordenação do Setor',           grupo:'Visitas',     icon:'📋', financeiro:false, evangelismo:false},
+  'visita_superintendencia':  {label:'Visita da Superintendência',               grupo:'Visitas',     icon:'👔', financeiro:false, evangelismo:false},
+  'visita_obreiro':           {label:'Visita do Obreiro da Congregação',         grupo:'Visitas',     icon:'⛪', financeiro:false, evangelismo:false},
+  'visita_ministerio':        {label:'Visitas do Ministério',                    grupo:'Visitas',     icon:'📖', financeiro:false, evangelismo:false},
+  'desviados_voltaram':       {label:'Desviados que Voltaram',                   grupo:'Espiritual',  icon:'🙏', financeiro:false, evangelismo:false},
+  'almas_salvas':             {label:'Almas Salvas',                             grupo:'Espiritual',  icon:'✨', financeiro:false, evangelismo:false},
+  'batismo_espirito':         {label:'Batismo no Espírito Santo',                grupo:'Espiritual',  icon:'🕊', financeiro:false, evangelismo:false},
+  'renovo':                   {label:'Renovo',                                   grupo:'Espiritual',  icon:'🌿', financeiro:false, evangelismo:false},
+  'bencaos_agradecidas':      {label:'Bênçãos Agradecidas',                     grupo:'Espiritual',  icon:'💛', financeiro:false, evangelismo:false},
+  'culto_ar_livre':           {label:'Culto ao Ar Livre',                        grupo:'Evangelismo', icon:'🌤', financeiro:false, evangelismo:true},
+  'ponto_pregacao':           {label:'Ponto de Pregação',                        grupo:'Evangelismo', icon:'📢', financeiro:false, evangelismo:true},
+  'pessoas_evangelizadas':    {label:'Pessoas Evangelizadas',                    grupo:'Evangelismo', icon:'👤', financeiro:false, evangelismo:false},
+  'literaturas_distribuidas': {label:'Literaturas Distribuídas',                 grupo:'Evangelismo', icon:'📚', financeiro:false, evangelismo:false},
+  'jovens_matriculados':      {label:'Jovens Matriculados',                      grupo:'Jovens',      icon:'🎓', financeiro:false, evangelismo:false},
+  'jovens_fora_umadalpe':     {label:'Jovens que não estão na UMADALPE',         grupo:'Jovens',      icon:'📌', financeiro:false, evangelismo:false},
+  'convocacoes_atendidas':    {label:'Convocações da Superintendência Atendidas',grupo:'Jovens',      icon:'✅', financeiro:false, evangelismo:false},
+  'presentes_oracao':         {label:'Presentes na Oração da UMADALPE',          grupo:'Jovens',      icon:'🙌', financeiro:false, evangelismo:false},
+  'presentes_evangelismo':    {label:'Presentes no Evangelismo',                 grupo:'Jovens',      icon:'🚀', financeiro:false, evangelismo:false},
+  'ofertas_umadalpe':         {label:'Ofertas',                                  grupo:'Jovens',      icon:'💰', financeiro:false, evangelismo:false},
+};
+const tipoLabel = t => TIPOS_EVENTO[t]?.label || t || '—';
+const tipoIcon  = t => TIPOS_EVENTO[t]?.icon  || '📋';
+const tipoFinanceiro  = t => !!TIPOS_EVENTO[t]?.financeiro;
+const tipoEvangelismo = t => !!TIPOS_EVENTO[t]?.evangelismo;
+const tipoColor = t => ({culto:'var(--gold)',evento:'var(--blue)',saida:'var(--teal)',visita_enfermos:'#f59e0b',visita_desviados:'#ec4899',visita_detidos:'#ef4444',visita_convertidos:'#14b8a6',almas_salvas:'#fbbf24',batismo_espirito:'#38bdf8',renovo:'#4ade80',culto_ar_livre:'#fb923c',ponto_pregacao:'#a78bfa'}[t]||'#64748b');
+
+// ─ PERMISSÕES ────────────────────────────────────────────────
+const PERM_DESC = {
+  'visualizar_dashboard':         {label:'Visualizar Dashboard',              desc:'Acessar o painel principal'},
+  'ver_relatorios':               {label:'Ver Relatórios',                    desc:'Acessar relatórios e gráficos'},
+  'ver_frequencia_usuarios':      {label:'Ver Frequência de Usuários',        desc:'Ver frequência de participação por usuário'},
+  'exportar_dados':               {label:'Exportar Dados',                    desc:'Exportar dados para PDF/Excel'},
+  'visualizar_resumo_financeiro': {label:'Visualizar Resumo Financeiro',      desc:'Exibir cards e gráficos de ofertas e dízimos'},
+  'filtrar_setor_dashboard':      {label:'Filtrar Setor no Dashboard',        desc:'Permite visualizar dados de outros setores no dashboard e relatórios (somente leitura; não permite editar)'},
+  'ver_todos_setores':            {label:'Ver Todos os Setores',              desc:'Acessa congregações/membros de outros setores (somente leitura)'},
+  'gerenciar_setores':            {label:'Gerenciar Setores',                 desc:'Criar, editar e excluir setores'},
+  'gerenciar_congregacoes':       {label:'Gerenciar Congregações',            desc:'Criar, editar e excluir congregações'},
+  'gerenciar_membros':            {label:'Gerenciar Membros',                 desc:'Adicionar, editar e remover membros'},
+  'gerenciar_usuarios':           {label:'Gerenciar Usuários',                desc:'Controlar usuários do sistema'},
+  'gerenciar_agenda':             {label:'Gerenciar Agenda',                  desc:'Criar e editar agenda da semana'},
+  'registrar_eventos':            {label:'Registrar Eventos',                 desc:'Criar cultos, eventos e saídas'},
+  'excluir_registros':            {label:'Excluir Registros',                 desc:'Excluir qualquer registro'},
+  'editar_permissoes':            {label:'Editar Permissões',                 desc:'Alterar permissões de grupos'},
+};
+
+// ── SISTEMA DE PERMISSÕES ─────────────────────────────────────
+const isSuperAdmin = () => currentUser?.role === 'admin';
+const hasPerm = p => isSuperAdmin() || !!permissionsCache[p];
+// Pode ver setores alheios na navegação (editar)
+const canSeeAllSetores = () => isSuperAdmin() || hasPerm('ver_todos_setores');
+// Pode FILTRAR outro setor no dashboard/rel (somente leitura)
+const canFilterSetores = () => isSuperAdmin() || hasPerm('filtrar_setor_dashboard');
+// Exibe bloco financeiro
+const canSeeFinanceiro = () => isSuperAdmin() || hasPerm('visualizar_resumo_financeiro');
+
+// Setor efetivo para queries de dashboard / relatórios
+function getSetorEfetivo(filtroOverride) {
+  const sid = filtroOverride || currentUser?.setor_id || null;
+  return sid;
+}
+
+async function loadPermissions() {
+  if (!currentUser?.id) return;
+  try {
+    const {data,error} = await db.rpc('get_user_permissions',{p_user_id:currentUser.id});
+    permissionsCache = {};
+    if (data&&!error) {
+      data.forEach(p => { permissionsCache[p.perm_code] = p.perm_ativo; });
+    } else {
+      const {data:legado} = await q('permissoes').select('permissao,ativo').eq('role',currentUser.role);
+      const map = {'Gerenciar Setores':'gerenciar_setores','Gerenciar Congregações':'gerenciar_congregacoes','Gerenciar Membros':'gerenciar_membros','Gerenciar Usuários':'gerenciar_usuarios','Visualizar Dashboard':'visualizar_dashboard','Ver Relatórios':'ver_relatorios','Editar Permissões':'editar_permissoes','Exportar Dados':'exportar_dados','Excluir Registros':'excluir_registros','Registrar Eventos':'registrar_eventos','Ver Todos os Setores':'ver_todos_setores','Gerenciar Agenda':'gerenciar_agenda','Ver Frequência de Usuários':'ver_frequencia_usuarios','Visualizar Resumo Financeiro':'visualizar_resumo_financeiro','Filtrar Setor no Dashboard':'filtrar_setor_dashboard'};
+      (legado||[]).forEach(p => { permissionsCache[map[p.permissao]||p.permissao.toLowerCase().replace(/ /g,'_')] = p.ativo; });
+    }
+  } catch(e) { console.warn('Permissões RPC indisponíveis',e); }
+}
+
+async function loadUserSetor() {
+  if (!currentUser?.setor_id) { currentUserSetor=null; return; }
+  const {data} = await q('setores').select('*').eq('id',currentUser.setor_id).single();
+  currentUserSetor = data||null;
+}
+
+// ── LOGIN ────────────────────────────────────────────────────
+$('btn-login').addEventListener('click', doLogin);
+$('inp-pass').addEventListener('keydown', e => e.key==='Enter'&&doLogin());
+$('inp-user').addEventListener('keydown', e => e.key==='Enter'&&$('inp-pass').focus());
+
+async function doLogin() {
+  const username=$('inp-user').value.trim(), pass=$('inp-pass').value.trim();
+  const errEl=$('login-err');
+  if (!username||!pass) { errEl.textContent='⚠ Preencha usuário e senha'; errEl.classList.remove('hidden'); return; }
+  errEl.classList.add('hidden');
+  $('btn-login').disabled=true;
+  $('btn-login').innerHTML='<span class="login-spinner"></span> Entrando...';
+  const {data:user,error} = await q('sistema_usuarios').select('*').eq('username',username).eq('senha',pass).eq('ativo',true).single();
+  if (error||!user) {
+    errEl.textContent='⚠ Usuário ou senha inválidos'; errEl.classList.remove('hidden');
+    $('btn-login').disabled=false; $('btn-login').innerHTML='→ Entrar no Sistema'; return;
+  }
+  localStorage.setItem('ecclesia_user',JSON.stringify(user));
+  currentUser=user;
+  await loadPermissions(); await loadUserSetor();
+  // Inicializa filtros de setor sempre com o setor do usuário
+  dashSetorFiltro = currentUser?.setor_id || null;
+  relSetorFiltro  = currentUser?.setor_id || null;
+  startApp(user);
+}
+
+function startApp(user) {
+  currentUser=user;
+  $('screen-login').classList.add('hidden'); $('screen-app').classList.remove('hidden');
+  const av=$('user-av'); av.textContent=initials(user.nome);
+  av.style.background=`linear-gradient(135deg,${avatarColor(user.nome)},#8b5cf6)`;
+  $('user-name-side').textContent=user.nome.split(' ')[0];
+  const rb=$('user-role-side'); rb.textContent=user.role; rb.className=`role-badge ${roleCls(user.role)}`;
+  $('topbar-user').textContent=user.nome.split(' ')[0];
+  $('topbar-date').textContent=`EclesiaSync · ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}`;
+  const ss=$('user-setor-side');
+  if (ss) ss.textContent=currentUserSetor?`📍 ${currentUserSetor.nome}`:(isSuperAdmin()?'🌐 Todos os Setores':'⚠ Sem setor');
+  navigate('dashboard');
+}
+
+// ── SIDEBAR & NAV ────────────────────────────────────────────
+$('sidebar-toggle').addEventListener('click',()=>{
+  sidebarCollapsed=!sidebarCollapsed;
+  $('sidebar').classList.toggle('collapsed',sidebarCollapsed);
+  $('main-wrap').classList.toggle('collapsed',sidebarCollapsed);
+  $('sidebar-toggle').textContent=sidebarCollapsed?'›':'‹';
+});
+$('hamburger').addEventListener('click',()=>toggleMobile(true));
+$('mob-overlay').addEventListener('click',()=>toggleMobile(false));
+function toggleMobile(open) { mobileOpen=open; $('sidebar').classList.toggle('mob-open',open); $('mob-overlay').classList.toggle('show',open); }
+
+document.querySelectorAll('.nav-item').forEach(el=>{
+  el.addEventListener('click',()=>{ navigate(el.dataset.page); toggleMobile(false); });
+});
+$('user-pill').addEventListener('click',async()=>{
+  const r=await confirmDialog('Sair do sistema','Deseja encerrar sua sessão?');
+  if (r.isConfirmed) { localStorage.removeItem('ecclesia_user'); location.reload(); }
+});
+
+function navigate(page) {
+  currentPage=page;
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
+  const titles={dashboard:'Dashboard',setores:'Setores',usuarios:'Usuários',relatorios:'Relatórios',permissoes:'Permissões',frequencia:'Frequência de Usuários'};
+  $('page-title').textContent=titles[page]||page;
+  if (page==='setores') navState={view:'setores',setor:null,cong:null};
+  Object.values(chartInstances).forEach(c=>c?.destroy?.()); chartInstances={};
+  const pc=$('page-content'); pc.style.animation='none'; pc.offsetHeight; pc.style.animation='';
+  switch(page) {
+    case 'dashboard':  renderDashboard(); break;
+    case 'setores':    renderSetores(); break;
+    case 'usuarios':   userSearch=''; renderUsuarios(); break;
+    case 'relatorios': renderRelatorios(); break;
+    case 'permissoes': renderPermissoes(); break;
+    case 'frequencia': renderFrequencia(); break;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  DASHBOARD — setor sempre pré-fixado no do usuário
+// ════════════════════════════════════════════════════════════
+async function renderDashboard() {
+  if (!hasPerm('visualizar_dashboard')) {
+    $('page-content').innerHTML=`<div class="empty"><div class="empty-ico">🔐</div><p>Você não tem permissão para acessar o dashboard.</p></div>`; return;
+  }
+  $('page-content').innerHTML=loadingPage();
+  const {data:allSetores} = await q('setores').select('id,nome').order('nome');
+  const now=new Date();
+  const mesAtual=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const inicioMes=`${mesAtual}-01`;
+  const fimMes=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().slice(0,10);
+
+  // Determina setor efetivo: sempre começa com o setor do usuário
+  const sid = dashSetorFiltro || currentUser?.setor_id || null;
+  const setorSelecionado = (allSetores||[]).find(s=>s.id===sid);
+
+  let qSet=q('setores').select('id',{count:'exact',head:true});
+  let qCong=q('congregacoes').select('id',{count:'exact',head:true});
+  let qMem=q('membros').select('id',{count:'exact',head:true});
+  let qEv=q('eventos').select('*').order('data',{ascending:false});
+  let qEvM=q('eventos').select('*').gte('data',inicioMes).lte('data',fimMes);
+
+  // Aplica filtro de setor — sempre (mesmo admin parte do setor do usuário)
+  if (sid) {
+    qSet=qSet.eq('id',sid); qCong=qCong.eq('setor_id',sid);
+    qMem=qMem.eq('setor_id',sid); qEv=qEv.eq('setor_id',sid); qEvM=qEvM.eq('setor_id',sid);
+  }
+
+  const [rSet,rCong,rMem,rEv,rEvM]=await Promise.all([qSet,qCong,qMem,qEv,qEvM]);
+  const eventos=rEv.data||[], eventosMes=rEvM.data||[];
+  const totalOferMes=eventosMes.reduce((s,e)=>s+(e.ofertas||0),0);
+  const totalDizMes=eventosMes.reduce((s,e)=>s+(e.dizimos||0),0);
+  const totalConvMes=eventosMes.reduce((s,e)=>s+(e.conversoes||0),0);
+  const totalPartMes=eventosMes.reduce((s,e)=>s+(e.participantes||0),0);
+
+  const hoje=new Date().toISOString().slice(0,10);
+  const em7=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+  let qAg=q('agenda_semana').select('*,congregacoes(nome)').gte('data',hoje).lte('data',em7).order('data');
+  if (sid) qAg=qAg.eq('setor_id',sid);
+  const {data:agendaItems}=await qAg.limit(10);
+  const nomeMes=now.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+
+  // Seletor de setor: visível apenas para quem tem filtrar_setor_dashboard
+  const setorSelectorHtml = canFilterSetores() ? `
+  <div class="dash-setor-selector">
+    <label class="selector-label">📍 Setor</label>
+    <select id="dash-setor-sel" onchange="dashSetorFiltro=this.value||currentUser?.setor_id||null;renderDashboard()" class="selector-select">
+      ${(allSetores||[]).map(s=>`<option value="${s.id}" ${s.id===sid?'selected':''}>${escHtml(s.nome)}</option>`).join('')}
+    </select>
+    <span class="selector-badge">Somente visualização</span>
+  </div>` : `<div class="dash-setor-locked"><span>📍</span> ${escHtml(setorSelecionado?.nome||currentUserSetor?.nome||'Meu Setor')} <span class="tag tag-blue" style="font-size:.65rem">fixo</span></div>`;
+
+  $('page-content').innerHTML=`
+  <div class="dash-header">
+    <div>
+      <h2 class="dash-title">Bem-vindo, ${escHtml(currentUser.nome.split(' ')[0])} 👋</h2>
+      <p class="dash-sub">${escHtml(setorSelecionado?.nome||currentUserSetor?.nome||'—')}</p>
+    </div>
+    <div class="dash-period">
+      ${setorSelectorHtml}
+      <span class="tag tag-gold">📅 ${nomeMes.charAt(0).toUpperCase()+nomeMes.slice(1)}</span>
+    </div>
+  </div>
+
+  <div class="stats-grid stats-4">
+    ${statCard('🏙','ic-gold',rSet.count||0,'Setores','banco de dados')}
+    ${statCard('⛪','ic-blue',rCong.count||0,'Congregações','cadastradas')}
+    ${statCard('👥','ic-teal',rMem.count||0,'Membros','cadastrados')}
+    ${statCard('📋','ic-violet',eventosMes.length,'Eventos','este mês')}
+  </div>
+
+  <div class="sec-hdr" style="margin-top:4px"><h2>Resumo do Mês</h2><span class="tag tag-gold">Atualizado em tempo real</span></div>
+  <div class="stats-grid stats-4" style="margin-bottom:28px">
+    ${statCard('👥','ic-blue',totalPartMes,'Participantes','este mês')}
+    ${statCard('✝','ic-violet',totalConvMes,'Conversões','este mês')}
+    ${canSeeFinanceiro()?statCard('💰','ic-teal',fmtMoney(totalOferMes),'Ofertas','este mês'):''}
+    ${canSeeFinanceiro()?statCard('💎','ic-gold',fmtMoney(totalDizMes),'Dízimos','este mês'):''}
+  </div>
+
+  <div class="charts-grid" style="margin-bottom:28px">
+    <div class="chart-card chart-span2"><h3>Participantes por Mês</h3><p>Acumulado de todos os eventos do ano</p><canvas id="chart-dash-line" height="100"></canvas></div>
+    <div class="chart-card"><h3>Tipos de Eventos</h3><p>Distribuição por categoria</p><canvas id="chart-dash-bar" height="180"></canvas></div>
+    ${canSeeFinanceiro()?`<div class="chart-card"><h3>Financeiro do Mês</h3><p>Ofertas vs Dízimos</p><canvas id="chart-dash-fin" height="180"></canvas></div>`:''}
+  </div>
+
+  <div class="sec-hdr"><h2>📅 Agenda da Semana</h2><span class="tag">Próximos 7 dias</span></div>
+  <div class="agenda-strip" style="margin-bottom:28px">${renderAgendaStrip(agendaItems||[])}</div>
+
+  <div class="sec-hdr">
+    <h2>Eventos Recentes</h2>
+    <button class="btn btn-secondary btn-sm" onclick="navigate('relatorios')">Ver todos →</button>
+  </div>
+  <div class="act-list">
+    ${eventos.slice(0,6).map(e=>`
+      <div class="act-item">
+        <div class="act-dot" style="background:${tipoColor(e.tipo)}"></div>
+        <div class="f1"><div class="fw5">${tipoIcon(e.tipo)} ${escHtml(tipoLabel(e.tipo))}</div><div class="fs-xs c3">${escHtml(e.resumo||'')}</div></div>
+        <span class="tag">${e.participantes||0} pessoas</span>
+        <span class="act-time">${fmtDate(e.data)}</span>
+      </div>`).join('')||'<p class="c3" style="padding:16px">Nenhum evento registrado.</p>'}
+  </div>`;
+
+  const byMonth=Array(12).fill(0);
+  eventos.forEach(e=>{ const m=new Date(e.data+'T00:00:00').getMonth(); byMonth[m]+=(e.participantes||0); });
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const lCtx=document.getElementById('chart-dash-line');
+  if (lCtx) chartInstances.dashLine=new Chart(lCtx,{type:'line',data:{labels:meses,datasets:[{label:'Participantes',data:byMonth,borderColor:'var(--gold)',backgroundColor:'rgba(201,168,76,.1)',tension:.4,fill:true,pointRadius:4,pointBackgroundColor:'var(--gold)'}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'},grid:{color:'rgba(255,255,255,.03)'}},y:{ticks:{color:'#94a3b8'},grid:{color:'rgba(255,255,255,.05)'}}}}});
+  const cultos=eventos.filter(e=>e.tipo==='culto').length, genEvt=eventos.filter(e=>e.tipo==='evento').length, saidas=eventos.filter(e=>e.tipo==='saida').length, outros=eventos.length-cultos-genEvt-saidas;
+  const bCtx=document.getElementById('chart-dash-bar');
+  if (bCtx) chartInstances.dashBar=new Chart(bCtx,{type:'doughnut',data:{labels:['Cultos','Eventos','Saídas','Outros'],datasets:[{data:[cultos,genEvt,saidas,outros],backgroundColor:['rgba(201,168,76,.8)','rgba(59,130,246,.8)','rgba(20,184,166,.8)','rgba(139,92,246,.8)'],borderWidth:0,hoverOffset:6}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8'},position:'bottom'}},cutout:'60%'}});
+  if (canSeeFinanceiro()) {
+    const fCtx=document.getElementById('chart-dash-fin');
+    if (fCtx) chartInstances.dashFin=new Chart(fCtx,{type:'bar',data:{labels:['Ofertas','Dízimos','Total'],datasets:[{data:[totalOferMes,totalDizMes,totalOferMes+totalDizMes],backgroundColor:['rgba(201,168,76,.8)','rgba(20,184,166,.7)','rgba(139,92,246,.7)'],borderRadius:8}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'},grid:{color:'rgba(255,255,255,.03)'}},y:{ticks:{color:'#94a3b8',callback:v=>'R$'+v.toLocaleString()},grid:{color:'rgba(255,255,255,.05)'}}}}});
+  }
+}
+
+function renderAgendaStrip(items) {
+  if (!items.length) return `<div class="agenda-empty"><span>📭</span><p>Nenhum evento agendado para os próximos 7 dias</p></div>`;
+  return items.map(item=>`
+    <div class="agenda-item">
+      <div class="agenda-date">
+        <span class="ag-day">${new Date(item.data+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','')}</span>
+        <span class="ag-num">${new Date(item.data+'T00:00:00').getDate()}</span>
+      </div>
+      <div class="agenda-body">
+        <div class="fw5 fs-sm">${escHtml(item.titulo||'')}</div>
+        <div class="fs-xs c3">${escHtml(item.descricao||'')} ${item.congregacoes?`· ${escHtml(item.congregacoes.nome)}`:''}</div>
+      </div>
+      ${item.hora?`<span class="tag">${item.hora}</span>`:''}
+    </div>`).join('');
+}
+function statCard(icon,cls,val,label,sub) {
+  return `<div class="stat-card"><div class="stat-ico ${cls}">${icon}</div><div><div class="stat-val">${val}</div><div class="stat-lbl">${label}</div><div class="stat-chg">↑ ${sub}</div></div></div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+//  SETORES
+// ════════════════════════════════════════════════════════════
+async function renderSetores() {
+  const pc=$('page-content');
+  if (navState.view==='setores') await renderSetoresMain(pc);
+  else if (navState.view==='congregacoes') await renderCongregacoes(pc);
+  else if (navState.view==='congregacao') await renderCongregacao(pc);
+}
+function breadcrumb() {
+  let h=`<div class="breadcrumb"><span class="bc-link" onclick="goSetores()">Setores</span>`;
+  if (navState.setor) h+=`<span class="bc-sep">›</span><span class="bc-link" onclick="goCongs()">${escHtml(navState.setor.nome)}</span>`;
+  if (navState.cong) h+=`<span class="bc-sep">›</span><span class="bc-cur">${escHtml(navState.cong.nome)}</span>`;
+  return h+'</div>';
+}
+function goSetores() { navState={view:'setores',setor:null,cong:null}; renderSetores(); }
+function goCongs()   { navState.view='congregacoes'; navState.cong=null; renderSetores(); }
+
+async function renderSetoresMain(pc) {
+  pc.innerHTML=loadingPage();
+  let qSetores=q('setores').select('*').order('nome');
+  if (!canSeeAllSetores()&&currentUser?.setor_id) qSetores=qSetores.eq('id',currentUser.setor_id);
+  const {data:setores,error}=await qSetores;
+  if (error) { pc.innerHTML=`<div class="empty"><div class="empty-ico">⚠</div><p>${error.message}</p></div>`; return; }
+  const filtered=(setores||[]).filter(s=>s.nome.toLowerCase().includes(setorSearch.toLowerCase()));
+  const [rC,rM]=await Promise.all([q('congregacoes').select('setor_id'),q('membros').select('setor_id')]);
+  const congCount=id=>(rC.data||[]).filter(c=>c.setor_id===id).length;
+  const memCount=id=>(rM.data||[]).filter(m=>m.setor_id===id).length;
+  pc.innerHTML=`
+  <div class="sec-hdr">
+    <h2>Setores <span class="count-badge">${(setores||[]).length}</span></h2>
+    <div class="sec-actions">
+      <div class="search-wrap form-group" style="margin:0">
+        <span class="search-ico">🔍</span>
+        <input id="setor-search" value="${escHtml(setorSearch)}" placeholder="Buscar setor..." oninput="setorSearch=this.value;renderSetores()" style="width:180px"/>
+      </div>
+      ${hasPerm('gerenciar_setores')?`<button class="btn btn-primary btn-sm" onclick="openAddModal('setor')">+ Novo Setor</button>`:''}
+    </div>
+  </div>
+  ${!canSeeAllSetores()&&!isSuperAdmin()?`<div class="access-notice"><span>🔒</span> Você está visualizando apenas o seu setor.</div>`:''}
+  <div class="cards-grid">
+    ${filtered.length?filtered.map((s,i)=>`
+      <div class="item-card" style="animation-delay:${i*.05}s" onclick="openSetor('${s.id}','${escHtml(s.nome)}','${s.regiao||''}')">
+        <div class="card-head"><div class="card-ico">🏙</div>
+          <div><div class="card-name">${escHtml(s.nome)}</div><div class="card-sub">Região ${s.regiao||'—'}</div></div>
+        </div>
+        <div class="card-meta"><span class="tag tag-gold">⛪ ${congCount(s.id)} Cong.</span><span class="tag tag-blue">👥 ${memCount(s.id)} Membros</span></div>
+        <div class="card-actions" onclick="event.stopPropagation()">
+          ${hasPerm('excluir_registros')?`<button class="btn btn-danger btn-sm" onclick="delSetor('${s.id}','${escHtml(s.nome)}')">🗑 Excluir</button>`:''}
+          <button class="btn btn-secondary btn-sm" onclick="openSetor('${s.id}','${escHtml(s.nome)}','${s.regiao||''}')">→ Abrir</button>
+        </div>
+      </div>`).join('')
+    :'<div class="empty"><div class="empty-ico">🏙</div><p>Nenhum setor encontrado.</p></div>'}
+  </div>`;
+}
+function openSetor(id,nome,regiao) {
+  if (!canSeeAllSetores()&&currentUser?.setor_id&&id!==currentUser.setor_id) { toast('Acesso negado a este setor','error'); return; }
+  navState.setor={id,nome,regiao}; navState.view='congregacoes'; navState.cong=null; renderSetores();
+}
+async function delSetor(id,nome) {
+  if (!hasPerm('excluir_registros')) { toast('Sem permissão','error'); return; }
+  const r=await confirmDialog('Excluir Setor',`"${nome}" e todas as congregações e membros serão removidos.`);
+  if (!r.isConfirmed) return;
+  const {error}=await q('setores').delete().eq('id',id);
+  if (error) { toast(error.message,'error'); return; }
+  toast('Setor excluído!'); renderSetores();
+}
+
+async function renderCongregacoes(pc) {
+  pc.innerHTML=loadingPage();
+  const {data:congs,error}=await q('congregacoes').select('*').eq('setor_id',navState.setor.id).order('nome');
+  if (error) { pc.innerHTML=`<div class="empty"><div class="empty-ico">⚠</div><p>${error.message}</p></div>`; return; }
+  const rM=await q('membros').select('congregacao_id');
+  const memCount=id=>(rM.data||[]).filter(m=>m.congregacao_id===id).length;
+  pc.innerHTML=`
+  ${breadcrumb()}
+  <div class="sec-hdr">
+    <div><h2>${escHtml(navState.setor.nome)}</h2><h3>Congregações deste setor</h3></div>
+    <div class="sec-actions">
+      <button class="btn btn-secondary btn-sm" onclick="goSetores()">← Voltar</button>
+      ${hasPerm('gerenciar_congregacoes')?`<button class="btn btn-primary btn-sm" onclick="openAddModal('congregacao')">+ Nova Congregação</button>`:''}
+    </div>
+  </div>
+  ${(congs||[]).length?`<div class="cards-grid">${(congs||[]).map((c,i)=>`
+    <div class="item-card" style="animation-delay:${i*.05}s" onclick="openCong('${c.id}',${JSON.stringify(c).replace(/"/g,'&quot;')})">
+      <div class="card-head"><div class="card-ico">⛪</div>
+        <div><div class="card-name">${escHtml(c.nome)}</div><div class="card-sub">${escHtml(c.endereco||'')}</div></div>
+      </div>
+      <div style="font-size:.77rem;color:var(--txt2);margin:8px 0">👨‍⚖️ ${escHtml(c.pastor_local||'A definir')}</div>
+      <div class="card-meta"><span class="tag tag-teal">👥 ${memCount(c.id)} membros</span></div>
+      <div class="card-actions" onclick="event.stopPropagation()">
+        ${hasPerm('gerenciar_congregacoes')?`<button class="btn btn-secondary btn-sm" onclick="openEditCongModal('${c.id}')">✏ Editar</button>`:''}
+        ${hasPerm('excluir_registros')?`<button class="btn btn-danger btn-sm" onclick="delCong('${c.id}','${escHtml(c.nome)}')">🗑</button>`:''}
+        <button class="btn btn-secondary btn-sm" onclick="openCong('${c.id}',${JSON.stringify(c).replace(/"/g,'&quot;')})">→ Abrir</button>
+      </div>
+    </div>`).join('')}</div>`
+  :'<div class="empty"><div class="empty-ico">⛪</div><p>Nenhuma congregação neste setor.</p></div>'}`;
+}
+function openCong(id,cObj) {
+  const c=typeof cObj==='string'?JSON.parse(cObj.replace(/&quot;/g,'"')):cObj;
+  navState.cong=c; navState.view='congregacao'; renderSetores();
+}
+async function delCong(id,nome) {
+  if (!hasPerm('excluir_registros')) { toast('Sem permissão','error'); return; }
+  const r=await confirmDialog('Excluir Congregação',`"${nome}" e seus membros serão removidos.`);
+  if (!r.isConfirmed) return;
+  const {error}=await q('congregacoes').delete().eq('id',id);
+  if (error) { toast(error.message,'error'); return; }
+  toast('Congregação excluída!'); navState.view='congregacoes'; navState.cong=null; renderSetores();
+}
+
+async function openEditCongModal(id) {
+  if (!hasPerm('gerenciar_congregacoes')) { toast('Sem permissão','error'); return; }
+  showModal(`<div class="modal-hdr"><span style="font-size:18px">✏</span><h2>Editar Congregação</h2><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body" id="edit-cong-body"><div class="loading-page"><div class="spinner"></div></div></div>`);
+  const [{data:c},{data:usuarios}]=await Promise.all([q('congregacoes').select('*').eq('id',id).single(),q('sistema_usuarios').select('id,nome,cargo').order('nome')]);
+  if (!c) { closeModal(); toast('Erro ao carregar','error'); return; }
+  const userOptions=(usuarios||[]).map(u=>`<option value="${u.id}">${escHtml(u.nome)} (${escHtml(u.cargo||'—')})</option>`).join('');
+  $('edit-cong-body').innerHTML=`
+  <div class="form-group"><label>Nome *</label><input id="ec-nome" value="${escHtml(c.nome)}"/></div>
+  <div class="form-group"><label>Endereço</label><input id="ec-end" value="${escHtml(c.endereco||'')}"/></div>
+  <div class="form-group"><label>Pastor Local</label><input id="ec-pastor" value="${escHtml(c.pastor_local||'')}"/></div>
+  <div class="form-row">
+    <div class="form-group"><label>Latitude</label><input id="ec-lat" type="number" step="0.0000001" value="${c.latitude||''}"/></div>
+    <div class="form-group"><label>Longitude</label><input id="ec-lng" type="number" step="0.0000001" value="${c.longitude||''}"/></div>
+  </div>
+  <div class="form-group"><label>Dirigente(s)</label><select id="ec-dirigente" multiple style="height:90px">${userOptions}</select></div>
+  <div class="form-group"><label>Vice-Dirigente(s)</label><select id="ec-vice" multiple style="height:90px">${userOptions}</select></div>
+  <div class="form-group"><label>Secretária(s)</label><select id="ec-sec" multiple style="height:90px">${userOptions}</select></div>`;
+  const preSelect=(selId,val)=>{ if (!val) return; const names=val.split(',').map(s=>s.trim()); const sel=$(selId); if (!sel) return; [...sel.options].forEach(o=>{ if (names.some(n=>o.text.startsWith(n))) o.selected=true; }); };
+  preSelect('ec-dirigente',c.dirigente); preSelect('ec-vice',c.vice_dirigente); preSelect('ec-sec',c.secretaria);
+  const modal=document.querySelector('.modal');
+  if (modal&&!modal.querySelector('.modal-foot')) { const foot=document.createElement('div'); foot.className='modal-foot'; foot.innerHTML=`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCong('${id}')">💾 Salvar</button>`; modal.appendChild(foot); }
+}
+async function saveCong(id) {
+  if (!hasPerm('gerenciar_congregacoes')) { toast('Sem permissão','error'); return; }
+  const nome=($('ec-nome')?.value||'').trim(); if (!nome) { toast('Nome obrigatório','error'); return; }
+  const getSelected=selId=>[...($( selId)?.selectedOptions||[])].map(o=>o.text.split(' (')[0]).join(', ');
+  const payload={nome,endereco:($('ec-end')?.value||'').trim()||null,pastor_local:($('ec-pastor')?.value||'').trim()||null,latitude:parseFloat($('ec-lat')?.value)||null,longitude:parseFloat($('ec-lng')?.value)||null,dirigente:getSelected('ec-dirigente')||null,vice_dirigente:getSelected('ec-vice')||null,secretaria:getSelected('ec-sec')||null};
+  const {error}=await q('congregacoes').update(payload).eq('id',id);
+  if (error) { toast(error.message,'error'); return; }
+  closeModal(); toast('Congregação atualizada!');
+  if (navState.cong?.id===id) navState.cong={...navState.cong,...payload};
+  renderSetores();
+}
+
+async function renderCongregacao(pc) {
+  pc.innerHTML=loadingPage();
+  const c=navState.cong;
+  const [{data:mems,error},{data:eventos}]=await Promise.all([q('membros').select('*').eq('congregacao_id',c.id).order('nome'),q('eventos').select('*').eq('congregacao_id',c.id).order('data',{ascending:false})]);
+  if (error) { pc.innerHTML=`<div class="empty"><div class="empty-ico">⚠</div><p>${error.message}</p></div>`; return; }
+  const totalOfertas=(eventos||[]).reduce((s,e)=>s+(e.ofertas||0),0);
+  const totalDizimos=(eventos||[]).reduce((s,e)=>s+(e.dizimos||0),0);
+  const hoje=new Date(); const inicioSemana=new Date(hoje); inicioSemana.setDate(hoje.getDate()-hoje.getDay());
+  const fimSemana=new Date(inicioSemana); fimSemana.setDate(inicioSemana.getDate()+6);
+  const {data:agendaSemana}=await q('agenda_semana').select('*').eq('congregacao_id',c.id).gte('data',inicioSemana.toISOString().slice(0,10)).lte('data',fimSemana.toISOString().slice(0,10)).order('data');
+  const mapLinks=buildMapLinks(c);
+  pc.innerHTML=`
+  ${breadcrumb()}
+  <div class="sec-hdr">
+    <div><h2>${escHtml(c.nome)}</h2><h3>${escHtml(c.endereco||'')}${mapLinks}</h3></div>
+    <div class="sec-actions">
+      <button class="btn btn-secondary btn-sm" onclick="goCongs()">← Voltar</button>
+      ${hasPerm('gerenciar_congregacoes')?`<button class="btn btn-secondary btn-sm" onclick="openEditCongModal('${c.id}')">✏ Editar</button>`:''}
+      ${hasPerm('gerenciar_membros')?`<button class="btn btn-secondary btn-sm" onclick="openAddModal('membro')">+ Membro</button>`:''}
+      ${hasPerm('registrar_eventos')?`<div class="dropdown-wrap" style="position:relative"><button class="btn btn-primary btn-sm" onclick="toggleEventMenu()">+ Evento ▾</button><div id="event-menu" class="dropdown-menu hidden">${buildEventMenuHtml()}</div></div>`:''}
+    </div>
+  </div>
+  <div class="struct-grid">
+    ${[['👨🏻‍⚖️','Pastor Local',c.pastor_local],['👨🏻‍💼','Dirigente',c.dirigente],['👥','Vice-Dirigente',c.vice_dirigente],['👩‍💼','Secretária',c.secretaria]].map(([icon,lbl,val],i)=>`<div class="struct-card" style="animation-delay:${i*.07}s"><div class="s-icon">${icon}</div><div class="s-label">${lbl}</div><div class="s-value">${escHtml(val||'A definir')}</div></div>`).join('')}
+  </div>
+  <div class="stats-grid stats-3" style="margin-bottom:22px">
+    ${statCard('📋','ic-gold',(eventos||[]).length,'Eventos registrados','')}
+    ${canSeeFinanceiro()?statCard('💰','ic-teal',fmtMoney(totalOfertas),'Total em Ofertas',''):''}
+    ${canSeeFinanceiro()?statCard('💵','ic-violet',fmtMoney(totalDizimos),'Total em Dízimos',''):''}
+  </div>
+  <div class="sec-hdr"><h2>📅 Agenda da Semana</h2><div class="sec-actions">${hasPerm('gerenciar_agenda')?`<button class="btn btn-primary btn-sm" onclick="openAgendaModal('${c.id}')">+ Adicionar</button>`:''}<button class="btn btn-secondary btn-sm" onclick="openAgendaCompleta('${c.id}')">Ver completa →</button></div></div>
+  <div style="margin-bottom:28px">${renderAgendaSemanaGrid(agendaSemana||[],inicioSemana,c.id)}</div>
+  <div class="sec-hdr"><h2>Eventos <span class="count-badge">${(eventos||[]).length}</span></h2></div>
+  ${(eventos||[]).length?`<div class="act-list" style="margin-bottom:28px">${(eventos||[]).map(e=>`
+    <div class="act-item" onclick="openEventDetail('${e.id}')" style="cursor:pointer">
+      <div class="act-dot" style="background:${tipoColor(e.tipo)}"></div>
+      <div class="f1"><div class="fw5">${tipoIcon(e.tipo)} ${tipoLabel(e.tipo)}</div><div class="fs-xs c3">${escHtml(e.resumo||'')}</div></div>
+      <div style="text-align:right">
+        <span class="tag">${e.participantes||0} pessoas</span>
+        ${tipoFinanceiro(e.tipo)&&canSeeFinanceiro()?`<div class="fs-xs c3 mt8">${fmtMoney(e.ofertas||0)} + ${fmtMoney(e.dizimos||0)}</div>`:''}
+      </div>
+      <span class="act-time">${fmtDate(e.data)}</span>
+      ${hasPerm('excluir_registros')?`<button class="btn btn-danger btn-sm" style="margin-left:8px" onclick="event.stopPropagation();delEvento('${e.id}')">🗑</button>`:''}
+    </div>`).join('')}</div>`:`<div class="empty" style="margin-bottom:28px"><div class="empty-ico">📋</div><p>Nenhum evento registrado.</p></div>`}
+  <div class="sec-hdr"><h2>Membros <span class="count-badge">${(mems||[]).length}</span></h2></div>
+  ${(mems||[]).length?`<div class="member-list">${(mems||[]).map((m,i)=>`
+    <div class="member-row" style="animation-delay:${i*.04}s" onclick="openMemberModal('${m.id}')">
+      <div class="av" style="background:${avatarColor(m.nome)}">${initials(m.nome)}</div>
+      <div class="f1"><div class="mem-name">${escHtml(m.nome)}</div><div class="mem-role">${escHtml(m.cargo)} · ${m.idade||'—'} anos</div></div>
+      <div class="mem-actions" onclick="event.stopPropagation()">
+        <button class="btn btn-teal btn-sm" onclick="openMemberModal('${m.id}')">Ver</button>
+        ${hasPerm('excluir_registros')?`<button class="btn btn-danger btn-sm" onclick="delMembro('${m.id}','${escHtml(m.nome)}')">🗑</button>`:''}
+      </div>
+    </div>`).join('')}</div>`:`<div class="empty"><div class="empty-ico">👥</div><p>Nenhum membro cadastrado.</p></div>`}`;
+}
+
+function buildMapLinks(c) {
+  if (!c.endereco&&!c.latitude) return '';
+  const query=c.latitude&&c.longitude?`${c.latitude},${c.longitude}`:encodeURIComponent(c.endereco||c.nome);
+  const gmaps=`https://www.google.com/maps/search/?api=1&query=${query}`;
+  const waze=c.latitude&&c.longitude?`https://waze.com/ul?ll=${c.latitude},${c.longitude}&navigate=yes`:`https://waze.com/ul?q=${encodeURIComponent(c.endereco||c.nome)}`;
+  return `<span class="map-links"><a href="${gmaps}" target="_blank" rel="noopener" class="map-btn maps-btn">📍 Maps</a><a href="${waze}" target="_blank" rel="noopener" class="map-btn waze-btn">🚗 Waze</a></span>`;
+}
+
+function buildEventMenuHtml() {
+  const grupos={};
+  Object.entries(TIPOS_EVENTO).forEach(([tipo,info])=>{ if (!grupos[info.grupo]) grupos[info.grupo]=[]; grupos[info.grupo].push({tipo,...info}); });
+  return Object.entries(grupos).map(([grupo,itens])=>`<div class="dropdown-label">${grupo}</div>${itens.map(({tipo,label,icon})=>`<div class="dropdown-item" onclick="openEventModal('${tipo}')">${icon} ${label}</div>`).join('')}`).join('');
+}
+
+function renderAgendaSemanaGrid(items,inicioSemana,congId) {
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  let html='<div class="agenda-grid-7">';
+  for (let d=0;d<7;d++) {
+    const dia=new Date(inicioSemana); dia.setDate(inicioSemana.getDate()+d);
+    const dStr=dia.toISOString().slice(0,10); const item=items.find(i=>i.data===dStr);
+    const isToday=dStr===new Date().toISOString().slice(0,10);
+    html+=`<div class="agenda-day${isToday?' agenda-today':''}"><div class="ag-day-head"><span class="ag-day-name">${dias[d]}</span><span class="ag-day-num">${dia.getDate()}</span></div><div class="ag-day-body">${item?`<div class="ag-event-chip" onclick="openAgendaDetail('${item.id}')">${escHtml(item.titulo||item.descricao||'')}</div>`:''} ${hasPerm('gerenciar_agenda')?`<button class="ag-add-btn" onclick="openAgendaModal('${congId}','${dStr}',${item?`'${item.id}'`:'null'})">+</button>`:''}</div></div>`;
+  }
+  return html+'</div>';
+}
+
+async function openAgendaModal(congId,dataPreset='',editId=null) {
+  if (!hasPerm('gerenciar_agenda')) { toast('Sem permissão','error'); return; }
+  showModal(`<div class="modal-hdr"><span>📅</span><h2>${editId?'Editar':'Adicionar'} Agenda</h2><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body"><div class="form-group"><label>Data *</label><input id="ag-data" type="date" value="${dataPreset||new Date().toISOString().slice(0,10)}"/></div><div class="form-group"><label>Título *</label><input id="ag-titulo" placeholder="Ex: Culto de Domingo"/></div><div class="form-group"><label>Horário</label><input id="ag-hora" type="time"/></div><div class="form-group"><label>Descrição</label><textarea id="ag-desc" rows="3"></textarea></div></div><div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveAgenda('${congId}','${editId||''}')">💾 Salvar</button></div>`);
+  if (editId) { const {data:ag}=await q('agenda_semana').select('*').eq('id',editId).single(); if (ag) { $('ag-data').value=ag.data||''; $('ag-titulo').value=ag.titulo||''; $('ag-hora').value=ag.hora||''; $('ag-desc').value=ag.descricao||''; } }
+}
+async function saveAgenda(congId,editId) {
+  if (!hasPerm('gerenciar_agenda')) { toast('Sem permissão','error'); return; }
+  const titulo=($('ag-titulo')?.value||'').trim(), data=$('ag-data')?.value;
+  if (!titulo||!data) { toast('Título e data são obrigatórios','error'); return; }
+  const payload={congregacao_id:congId,setor_id:navState.setor?.id||null,data,titulo,hora:$('ag-hora')?.value||null,descricao:($('ag-desc')?.value||'').trim()||null};
+  let error; if (editId) ({error}=await q('agenda_semana').update(payload).eq('id',editId)); else ({error}=await q('agenda_semana').insert(payload));
+  if (error) { toast(error.message,'error'); return; }
+  toast(editId?'Agenda atualizada!':'Evento adicionado!'); closeModal(); renderSetores();
+}
+async function openAgendaDetail(id) {
+  const {data:ag}=await q('agenda_semana').select('*').eq('id',id).single(); if (!ag) return;
+  showModal(`<div class="mem-profile"><button class="modal-close" style="position:absolute;top:14px;right:14px" onclick="closeModal()">✕</button><div style="font-size:40px;margin-bottom:8px">📅</div><div class="mem-modal-name">${escHtml(ag.titulo||'')}</div><span class="tag tag-gold">${fmtDate(ag.data)}${ag.hora?' · '+ag.hora:''}</span></div><div style="padding:0 30px 16px">${ag.descricao?`<p style="color:var(--txt2);font-size:.88rem">${escHtml(ag.descricao)}</p>`:'<p class="c3">Sem descrição.</p>'}</div><div class="mem-modal-foot">${hasPerm('gerenciar_agenda')?`<button class="btn btn-secondary" onclick="openAgendaModal('${ag.congregacao_id}','${ag.data}','${ag.id}');closeModal()">✏ Editar</button>`:''} ${hasPerm('excluir_registros')?`<button class="btn btn-danger" onclick="delAgenda('${ag.id}')">🗑 Excluir</button>`:''}<button class="btn btn-secondary" onclick="closeModal()">Fechar</button></div>`);
+}
+async function delAgenda(id) {
+  if (!hasPerm('excluir_registros')) { toast('Sem permissão','error'); return; }
+  const r=await confirmDialog('Excluir Agenda','Este item será removido.');
+  if (!r.isConfirmed) return;
+  const {error}=await q('agenda_semana').delete().eq('id',id);
+  if (error) { toast(error.message,'error'); return; }
+  toast('Removido!'); closeModal(); renderSetores();
+}
+async function openAgendaCompleta(congId) {
+  showModal(`<div class="modal-hdr"><span>📅</span><h2>Agenda Completa</h2><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body" id="agenda-completa-body"><div class="loading-page"><div class="spinner"></div></div></div>`);
+  const mesAtual=new Date(); const inicio=`${mesAtual.getFullYear()}-${String(mesAtual.getMonth()+1).padStart(2,'0')}-01`;
+  const fim=new Date(mesAtual.getFullYear(),mesAtual.getMonth()+1,0).toISOString().slice(0,10);
+  const {data:items}=await q('agenda_semana').select('*').eq('congregacao_id',congId).gte('data',inicio).lte('data',fim).order('data');
+  $('agenda-completa-body').innerHTML=`<p class="c3 fs-sm" style="margin-bottom:16px">Mês atual</p>${(items||[]).length?(items||[]).map(i=>`<div class="act-item" onclick="openAgendaDetail('${i.id}');closeModal()" style="cursor:pointer;margin-bottom:8px"><div class="act-dot" style="background:var(--gold)"></div><div class="f1"><div class="fw5">${escHtml(i.titulo||'')}</div><div class="fs-xs c3">${escHtml(i.descricao||'')}</div></div><span class="act-time">${fmtDate(i.data)}</span></div>`).join(''):'<div class="empty"><div class="empty-ico">📅</div><p>Nenhum item.</p></div>'}`;
+}
+
+function toggleEventMenu() {
+  const m=$('event-menu'); if (m) m.classList.toggle('hidden');
+  const handler=e=>{ if (!e.target.closest('.dropdown-wrap')){ m?.classList.add('hidden'); document.removeEventListener('click',handler); } };
+  setTimeout(()=>document.addEventListener('click',handler),0);
+}
+
+async function openEventModal(tipo) {
+  if (!hasPerm('registrar_eventos')) { toast('Sem permissão','error'); return; }
+  $('event-menu')?.classList.add('hidden');
+  const info=TIPOS_EVENTO[tipo]||{label:tipo,icon:'📋',financeiro:false,evangelismo:false};
+  const {data:mems}=await q('membros').select('id,nome,cargo').eq('congregacao_id',navState.cong.id).order('nome');
+  let qExt=q('membros').select('id,nome,cargo,congregacao_id').order('nome').neq('congregacao_id',navState.cong.id);
+  if (!canSeeAllSetores()&&currentUser?.setor_id) qExt=qExt.eq('setor_id',currentUser.setor_id);
+  const {data:allMems}=await qExt;
+  let extraFields='';
+  if (info.financeiro) extraFields=`<div class="form-row"><div class="form-group"><label>Horário Início</label><input id="ev-inicio" type="time"/></div><div class="form-group"><label>Horário Fim</label><input id="ev-fim" type="time"/></div></div><div class="form-row"><div class="form-group"><label>Conversões</label><input id="ev-conversoes" type="number" min="0" placeholder="0"/></div><div class="form-group"><label>Participantes</label><input id="ev-participantes" type="number" min="0" placeholder="0"/></div></div><div class="form-row"><div class="form-group"><label>Ofertas (R$)</label><input id="ev-ofertas" type="number" step="0.01" min="0" placeholder="0"/></div><div class="form-group"><label>Dízimos (R$)</label><input id="ev-dizimos" type="number" step="0.01" min="0" placeholder="0"/></div></div>`;
+  else if (info.evangelismo) extraFields=`<div class="form-row"><div class="form-group"><label>Horário Início</label><input id="ev-inicio" type="time"/></div><div class="form-group"><label>Horário Fim</label><input id="ev-fim" type="time"/></div></div><div class="form-row"><div class="form-group"><label>Evangelizados</label><input id="ev-evangelizados" type="number" min="0" placeholder="0"/></div><div class="form-group"><label>Vidas Salvas</label><input id="ev-conversoes" type="number" min="0" placeholder="0"/></div></div><div class="form-group"><label>Participantes (equipe)</label><input id="ev-participantes" type="number" min="0" placeholder="0"/></div>`;
+  else extraFields=`<div class="form-group"><label>Quantidade / Participantes</label><input id="ev-participantes" type="number" min="0" placeholder="0"/></div>`;
+  showModal(`<div class="modal-hdr"><span>${info.icon}</span><h2>Registrar: ${info.label}</h2><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body"><div class="form-group"><label>Data *</label><input id="ev-data" type="date" value="${new Date().toISOString().slice(0,10)}"/></div><div class="form-group"><label>Resumo / Obs.</label><textarea id="ev-resumo" rows="2" style="resize:vertical"></textarea></div>${extraFields}<div class="form-group"><label>Participantes da Congregação</label><div class="member-select-list" id="ev-mems-local">${(mems||[]).map(m=>`<label class="check-row"><input type="checkbox" class="ev-mem-check" value="${m.id}" data-nome="${escHtml(m.nome)}"/><div class="av av-sm" style="background:${avatarColor(m.nome)}">${initials(m.nome)}</div><span>${escHtml(m.nome)} <em class="c3">${escHtml(m.cargo)}</em></span></label>`).join('')||'<p class="c3 fs-xs">Nenhum membro.</p>'}</div></div><div class="form-group"><label>Externos (mesmo setor)</label><input id="ev-ext-search" placeholder="Buscar..." oninput="filterExtMembers(this.value)" style="margin-bottom:8px"/><div class="member-select-list" id="ev-mems-ext" style="max-height:140px">${(allMems||[]).map(m=>`<label class="check-row ev-ext-row"><input type="checkbox" class="ev-ext-check" value="${m.id}" data-nome="${escHtml(m.nome)}"/><div class="av av-sm" style="background:${avatarColor(m.nome)}">${initials(m.nome)}</div><span>${escHtml(m.nome)} <em class="c3">${escHtml(m.cargo)}</em></span></label>`).join('')||'<p class="c3 fs-xs">Sem externos.</p>'}</div></div></div><div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="submitEvento('${tipo}')">✚ Registrar</button></div>`);
+}
+function filterExtMembers(q2) { document.querySelectorAll('.ev-ext-row').forEach(row=>{ row.style.display=(row.querySelector('input')?.dataset.nome||'').toLowerCase().includes(q2.toLowerCase())?'':'none'; }); }
+async function submitEvento(tipo) {
+  if (!hasPerm('registrar_eventos')) { toast('Sem permissão','error'); return; }
+  const data=$('ev-data')?.value; if (!data) { toast('Data é obrigatória','error'); return; }
+  const localChecked=[...document.querySelectorAll('.ev-mem-check:checked')].map(c=>c.value);
+  const extChecked=[...document.querySelectorAll('.ev-ext-check:checked')].map(c=>c.value);
+  const participanteIds=[...localChecked,...extChecked];
+  const payload={congregacao_id:navState.cong.id,setor_id:navState.setor.id,tipo,data,resumo:($('ev-resumo')?.value||'').trim(),participantes:parseInt($('ev-participantes')?.value)||participanteIds.length||0,hora_inicio:$('ev-inicio')?.value||null,hora_fim:$('ev-fim')?.value||null,conversoes:parseInt($('ev-conversoes')?.value)||0,ofertas:parseFloat($('ev-ofertas')?.value)||0,dizimos:parseFloat($('ev-dizimos')?.value)||0,evangelizados:parseInt($('ev-evangelizados')?.value)||0,participante_ids:participanteIds};
+  const {error}=await q('eventos').insert(payload);
+  if (error) { toast(error.message,'error'); return; }
+  toast('Evento registrado!'); closeModal(); renderSetores();
+}
+async function openEventDetail(id) {
+  showModal(loadingPage());
+  const {data:ev,error}=await q('eventos').select('*').eq('id',id).single();
+  if (error||!ev) { closeModal(); toast('Erro','error'); return; }
+  const info=TIPOS_EVENTO[ev.tipo]||{label:ev.tipo,icon:'📋'};
+  let participantesHtml='';
+  if (ev.participante_ids?.length>0) {
+    const {data:partics}=await q('membros').select('id,nome,cargo').in('id',ev.participante_ids);
+    if ((partics||[]).length) participantesHtml=`<div style="padding:0 30px 8px"><div class="sec-hdr" style="margin-bottom:10px"><h2 style="font-size:.9rem">Participantes (${partics.length})</h2></div><div class="partic-list">${partics.map(p=>`<div class="partic-row"><div class="av av-sm" style="background:${avatarColor(p.nome)}">${initials(p.nome)}</div><span class="fs-sm">${escHtml(p.nome)} <em class="c3 fs-xs">${escHtml(p.cargo||'')}</em></span></div>`).join('')}</div></div>`;
+  }
+  let detalhes='';
+  if (info.financeiro) detalhes=`<div class="mem-info-grid"><div class="inf-item"><label>Horário</label><span>${ev.hora_inicio||'—'} – ${ev.hora_fim||'—'}</span></div><div class="inf-item"><label>Participantes</label><span>${ev.participantes||0}</span></div><div class="inf-item"><label>Conversões</label><span>${ev.conversoes||0}</span></div>${canSeeFinanceiro()?`<div class="inf-item"><label>Ofertas</label><span>${fmtMoney(ev.ofertas)}</span></div><div class="inf-item"><label>Dízimos</label><span>${fmtMoney(ev.dizimos)}</span></div>`:''}</div>`;
+  else if (info.evangelismo) detalhes=`<div class="mem-info-grid"><div class="inf-item"><label>Horário</label><span>${ev.hora_inicio||'—'} – ${ev.hora_fim||'—'}</span></div><div class="inf-item"><label>Equipe</label><span>${ev.participantes||0}</span></div><div class="inf-item"><label>Evangelizados</label><span>${ev.evangelizados||0}</span></div><div class="inf-item"><label>Vidas Salvas</label><span>${ev.conversoes||0}</span></div></div>`;
+  else detalhes=`<div class="mem-info-grid"><div class="inf-item"><label>Quantidade</label><span>${ev.participantes||0}</span></div></div>`;
+  showModal(`<div class="mem-profile"><button class="modal-close" style="position:absolute;top:14px;right:14px" onclick="closeModal()">✕</button><div style="font-size:40px;margin-bottom:8px">${info.icon}</div><div class="mem-modal-name">${info.label}</div><span class="tag tag-gold">${fmtDate(ev.data)}</span></div>${detalhes}${ev.resumo?`<div style="padding:0 30px 8px"><p style="color:var(--txt2);font-size:.88rem">${escHtml(ev.resumo)}</p></div>`:''}${participantesHtml}<div class="mem-modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Fechar</button></div>`);
+}
+async function delEvento(id) {
+  if (!hasPerm('excluir_registros')) { toast('Sem permissão','error'); return; }
+  const r=await confirmDialog('Excluir Evento','Este evento será removido permanentemente.');
+  if (!r.isConfirmed) return;
+  const {error}=await q('eventos').delete().eq('id',id);
+  if (error) { toast(error.message,'error'); return; }
+  toast('Evento removido!'); renderSetores();
+}
+
+async function openMemberModal(id) {
+  showModal(loadingPage());
+  const {data:m,error}=await q('membros').select('*').eq('id',id).single();
+  if (error||!m) { closeModal(); toast('Erro','error'); return; }
+  showModal(`<div class="mem-profile"><button class="modal-close" style="position:absolute;top:14px;right:14px" onclick="closeModal()">✕</button><div class="mem-av-lg" style="background:${avatarColor(m.nome)}">${initials(m.nome)}</div><div class="mem-modal-name">${escHtml(m.nome)}</div><span class="tag tag-gold">${escHtml(m.cargo)}</span></div><div class="mem-info-grid"><div class="inf-item"><label>Idade</label><span>${m.idade||'—'} anos</span></div><div class="inf-item"><label>Telefone</label><span>${escHtml(m.telefone||'—')}</span></div><div class="inf-item"><label>Email</label><span style="font-size:.78rem">${escHtml(m.email||'—')}</span></div><div class="inf-item"><label>Batismo</label><span>${m.data_batismo?fmtDate(m.data_batismo):'—'}</span></div></div><div class="mem-modal-foot">${m.telefone?`<a href="https://wa.me/${m.telefone.replace(/\D/g,'')}" target="_blank" class="btn btn-teal">📱 WhatsApp</a>`:''} ${hasPerm('gerenciar_membros')?`<button class="btn btn-secondary" onclick="openEditMembro('${m.id}')">✏ Editar</button>`:''}<button class="btn btn-secondary" onclick="closeModal()">Fechar</button></div>`);
+}
+function openEditMembro(id) {
+  if (!hasPerm('gerenciar_membros')) { toast('Sem permissão','error'); return; }
+  showModal(`<div class="modal-hdr"><span>✏</span><h2>Editar Membro</h2><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body" id="edit-mem-body"><div class="loading-page"><div class="spinner"></div></div></div>`);
+  q('membros').select('*').eq('id',id).single().then(({data:m})=>{
+    if (!m) return;
+    $('edit-mem-body').innerHTML=`<div class="form-group"><label>Nome</label><input id="em-nome" value="${escHtml(m.nome)}"/></div><div class="form-row"><div class="form-group"><label>Cargo</label><select id="em-cargo">${CARGOS.map(c=>`<option${c===m.cargo?' selected':''}>${c}</option>`).join('')}</select></div><div class="form-group"><label>Idade</label><input id="em-idade" type="number" value="${m.idade||''}"/></div></div><div class="form-group"><label>Telefone</label><input id="em-tel" value="${escHtml(m.telefone||'')}"/></div><div class="form-group"><label>Email</label><input id="em-email" value="${escHtml(m.email||'')}"/></div>`;
+    const modal=document.querySelector('.modal');
+    if (modal&&!modal.querySelector('.modal-foot')) { const foot=document.createElement('div'); foot.className='modal-foot'; foot.innerHTML=`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveMembro('${id}')">💾 Salvar</button>`; modal.appendChild(foot); }
+  });
+}
+async function saveMembro(id) {
+  if (!hasPerm('gerenciar_membros')) { toast('Sem permissão','error'); return; }
+  const payload={nome:($('em-nome')?.value||'').trim(),cargo:$('em-cargo')?.value,idade:parseInt($('em-idade')?.value)||null,telefone:($('em-tel')?.value||'').trim(),email:($('em-email')?.value||'').trim()};
+  if (!payload.nome) { toast('Nome obrigatório','error'); return; }
+  const {error}=await q('membros').update(payload).eq('id',id);
+  if (error) { toast(error.message,'error'); return; }
+  closeModal(); toast('Membro atualizado!'); if (currentPage==='setores') renderSetores();
+}
+async function delMembro(id,nome) {
+  if (!hasPerm('excluir_registros')) { toast('Sem permissão','error'); return; }
+  const r=await confirmDialog('Remover Membro',`"${nome}" será removido permanentemente.`);
+  if (!r.isConfirmed) return;
+  const {error}=await q('membros').delete().eq('id',id);
+  if (error) { toast(error.message,'error'); return; }
+  toast('Membro removido!'); renderSetores();
+}
+function openAddModal(type) {
+  const labels={setor:'Novo Setor',congregacao:'Nova Congregação',membro:'Novo Membro'};
+  let body='';
+  if (type==='setor') body=`<div class="form-group"><label>Nome do Setor *</label><input id="add-nome" placeholder="Ex: Setor Alpha"/></div><div class="form-group"><label>Região</label><select id="add-reg">${REGIOES.map(r=>`<option>${r}</option>`).join('')}</select></div>`;
+  else if (type==='congregacao') body=`<div class="form-group"><label>Nome *</label><input id="add-nome"/></div><div class="form-group"><label>Endereço</label><input id="add-end"/></div><div class="form-group"><label>Pastor Local</label><input id="add-past"/></div><div class="form-row"><div class="form-group"><label>Latitude</label><input id="add-lat" type="number" step="0.0000001"/></div><div class="form-group"><label>Longitude</label><input id="add-lng" type="number" step="0.0000001"/></div></div>`;
+  else body=`<div class="form-group"><label>Nome Completo *</label><input id="add-nome"/></div><div class="form-row"><div class="form-group"><label>Cargo</label><select id="add-cargo">${CARGOS.map(c=>`<option>${c}</option>`).join('')}</select></div><div class="form-group"><label>Idade</label><input id="add-idade" type="number"/></div></div><div class="form-group"><label>Telefone</label><input id="add-tel"/></div><div class="form-group"><label>Email</label><input id="add-email" type="email"/></div>`;
+  showModal(`<div class="modal-hdr"><span>✚</span><h2>${labels[type]}</h2><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body">${body}</div><div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="submitAdd('${type}')">✚ Criar</button></div>`);
+  setTimeout(()=>{ const n=$('add-nome'); if (n) n.focus(); },100);
+}
+async function submitAdd(type) {
+  const nome=($('add-nome')?.value||'').trim(); if (!nome) { toast('Nome é obrigatório','error'); return; }
+  let error;
+  if (type==='setor') { if (!hasPerm('gerenciar_setores')) { toast('Sem permissão','error'); return; } ({error}=await q('setores').insert({nome,regiao:$('add-reg').value})); }
+  else if (type==='congregacao') { if (!hasPerm('gerenciar_congregacoes')) { toast('Sem permissão','error'); return; } ({error}=await q('congregacoes').insert({nome,setor_id:navState.setor.id,endereco:$('add-end')?.value||null,pastor_local:$('add-past')?.value||null,latitude:parseFloat($('add-lat')?.value)||null,longitude:parseFloat($('add-lng')?.value)||null})); }
+  else { if (!hasPerm('gerenciar_membros')) { toast('Sem permissão','error'); return; } ({error}=await q('membros').insert({nome,congregacao_id:navState.cong.id,setor_id:navState.setor.id,cargo:$('add-cargo').value,idade:parseInt($('add-idade')?.value)||null,telefone:$('add-tel')?.value||null,email:$('add-email')?.value||null})); }
+  if (error) { toast(error.message,'error'); return; }
+  toast({setor:'Setor criado!',congregacao:'Congregação criada!',membro:'Membro adicionado!'}[type]);
+  closeModal(); renderSetores();
+}
+
+// ════════════════════════════════════════════════════════════
+//  USUÁRIOS
+// ════════════════════════════════════════════════════════════
+async function renderUsuarios() {
+  if (!hasPerm('gerenciar_usuarios')) { $('page-content').innerHTML=`<div class="empty"><div class="empty-ico">🔐</div><p>Sem permissão.</p></div>`; return; }
+  $('page-content').innerHTML=loadingPage();
+  const {data,error}=await q('sistema_usuarios').select('*').order('nome');
+  if (error) { $('page-content').innerHTML=`<div class="empty"><div class="empty-ico">⚠</div><p>${error.message}</p></div>`; return; }
+  const {data:setores}=await q('setores').select('id,nome').order('nome');
+  const usuarios=(data||[]).filter(u=>u.nome.toLowerCase().includes(userSearch.toLowerCase()));
+  const setorNome=id=>(setores||[]).find(s=>s.id===id)?.nome||'—';
+  $('page-content').innerHTML=`
+  <div class="sec-hdr">
+    <h2>Usuários do Sistema</h2>
+    <div class="sec-actions">
+      <div class="search-wrap form-group" style="margin:0"><span class="search-ico">🔍</span><input value="${escHtml(userSearch)}" placeholder="Buscar usuário..." oninput="userSearch=this.value;renderUsuarios()" style="width:180px"/></div>
+      <button class="btn btn-primary btn-sm" onclick="openUserModal(null)">+ Novo Usuário</button>
+    </div>
+  </div>
+  <div class="responsive-table-wrap">
+    ${usuarios.map(u=>`
+    <div class="user-card">
+      <div class="user-card-main">
+        <div class="av av-sm" style="background:${avatarColor(u.nome)}">${initials(u.nome)}</div>
+        <div class="user-card-info">
+          <div class="fw5 fs-sm">${escHtml(u.nome)}</div>
+          <div class="fs-xs c3">${escHtml(u.username||'—')} · ${escHtml(u.cargo||'—')}</div>
+          <div class="user-card-tags">
+            <span class="role-badge ${roleCls(u.role)}">${u.role}</span>
+            <span class="tag ${u.ativo?'tag-teal':'tag-rose'}">${u.ativo?'Ativo':'Inativo'}</span>
+            ${u.setor_id?`<span class="tag tag-blue fs-xs">${setorNome(u.setor_id)}</span>`:'<span class="tag tag-rose fs-xs">Sem setor</span>'}
+          </div>
+        </div>
+      </div>
+      <div class="user-card-actions">
+        <button class="btn btn-secondary btn-sm" onclick="openUserModal('${u.id}')">✏ Editar</button>
+        ${isSuperAdmin()?`<button class="btn btn-secondary btn-sm" onclick="openUserPermModal('${u.id}','${escHtml(u.nome)}')">🔐</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="delUser('${u.id}','${escHtml(u.nome)}')">🗑</button>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function openUserModal(id) {
+  const ROLES=['admin','dirigente','adjunto','usuario'];
+  showModal(`<div class="modal-hdr"><span>👤</span><h2>${id?'Editar Usuário':'Novo Usuário'}</h2><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body" id="user-modal-body">${id?'<div class="loading-page"><div class="spinner"></div></div>':userFormHtml(null,ROLES)}</div><div class="modal-foot" id="user-modal-foot">${id?'':`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveUser(null)">💾 Salvar</button>`}</div>`);
+  if (id) {
+    Promise.all([q('sistema_usuarios').select('*').eq('id',id).single(),q('setores').select('id,nome').order('nome')]).then(([{data:u},{data:setores}])=>{
+      if (!u) return;
+      $('user-modal-body').innerHTML=userFormHtml(u,ROLES,setores||[]);
+      $('user-modal-foot').innerHTML=`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveUser('${id}')">💾 Salvar</button>`;
+    });
+  } else { q('setores').select('id,nome').order('nome').then(({data:setores})=>{ $('user-modal-body').innerHTML=userFormHtml(null,ROLES,setores||[]); }); }
+}
+function userFormHtml(u,ROLES,setores=[]) {
+  return `<div class="form-group"><label>Nome Completo *</label><input id="um-name" value="${escHtml(u?.nome||'')}" placeholder="Nome completo"/></div><div class="form-group"><label>Username *</label><input id="um-username" value="${escHtml(u?.username||'')}"/></div><div class="form-group"><label>Senha ${!u?'*':'(vazio = manter)'}</label><input id="um-pass" type="password"/></div><div class="form-row"><div class="form-group"><label>Idade</label><input id="um-age" type="number" value="${u?.idade||''}"/></div><div class="form-group"><label>Tipo de Acesso</label><select id="um-role">${ROLES.map(r=>`<option value="${r}" ${r===(u?.role||'usuario')?'selected':''}>${r}</option>`).join('')}</select></div></div><div class="form-group"><label>Setor *</label><select id="um-setor"><option value="">— Selecione —</option>${setores.map(s=>`<option value="${s.id}" ${s.id===u?.setor_id?'selected':''}>${escHtml(s.nome)}</option>`).join('')}</select></div><div class="form-group"><label>Cargo</label><select id="um-cargo">${CARGOS.map(c=>`<option ${c===(u?.cargo||'Membro')?'selected':''}>${c}</option>`).join('')}</select></div><div class="form-group"><label>Congregação</label><input id="um-cong" value="${escHtml(u?.congregacao||'Sede Central')}"/></div><div class="form-group"><label>Status</label><select id="um-ativo"><option value="true" ${u?.ativo!==false?'selected':''}>Ativo</option><option value="false" ${u?.ativo===false?'selected':''}>Inativo</option></select></div>`;
+}
+async function saveUser(id) {
+  const nome=($('um-name')?.value||'').trim(), username=($('um-username')?.value||'').trim(), senha=($('um-pass')?.value||'').trim();
+  if (!nome||!username) { toast('Nome e username obrigatórios','error'); return; }
+  if (!id&&!senha) { toast('Senha obrigatória','error'); return; }
+  const payload={nome,username,role:$('um-role').value,cargo:$('um-cargo').value,congregacao:$('um-cong').value,idade:parseInt($('um-age')?.value)||null,ativo:$('um-ativo').value==='true',setor_id:$('um-setor')?.value||null};
+  if (senha) payload.senha=senha;
+  const {error}=id?await q('sistema_usuarios').update(payload).eq('id',id):await q('sistema_usuarios').insert(payload);
+  if (error) { toast(error.message,'error'); return; }
+  closeModal(); toast(id?'Usuário atualizado!':'Usuário criado!'); renderUsuarios();
+}
+async function delUser(id,nome) {
+  if (!isSuperAdmin()&&!hasPerm('gerenciar_usuarios')) { toast('Sem permissão','error'); return; }
+  const r=await confirmDialog('Remover Usuário',`"${nome}" será removido.`); if (!r.isConfirmed) return;
+  const {error}=await q('sistema_usuarios').delete().eq('id',id);
+  if (error) { toast(error.message,'error'); return; }
+  toast('Usuário removido!'); renderUsuarios();
+}
+async function openUserPermModal(userId,userName) {
+  if (!isSuperAdmin()) { toast('Apenas admin pode alterar','error'); return; }
+  showModal(`<div class="modal-hdr"><span>🔐</span><h2>Permissões — ${escHtml(userName)}</h2><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body" id="uperm-body"><div class="loading-page"><div class="spinner"></div></div></div>`);
+  const [{data:rp},{data:up},{data:userRow}]=await Promise.all([q('role_permissions').select('permission_code,ativo'),q('user_permissions').select('permission_code,ativo').eq('user_id',userId),q('sistema_usuarios').select('role').eq('id',userId).single()]);
+  const role=userRow?.role||'usuario'; const rolePerms={},userOverrides={},resolved={};
+  (rp||[]).forEach(p=>{ rolePerms[p.permission_code]=p.ativo; });
+  (up||[]).forEach(p=>{ userOverrides[p.permission_code]=p.ativo; });
+  Object.keys(PERM_DESC).forEach(code=>{ resolved[code]=userOverrides.hasOwnProperty(code)?userOverrides[code]:(rolePerms[code]||false); });
+  $('uperm-body').innerHTML=`<p class="c3 fs-sm" style="margin-bottom:14px">Sobrescreve permissões do grupo <span class="role-badge ${roleCls(role)}">${role}</span>.</p>${Object.entries(PERM_DESC).map(([code,{label,desc}])=>{ const on=!!resolved[code],isOverride=userOverrides.hasOwnProperty(code); return `<div class="perm-row"><div class="perm-lbl"><strong>${label} ${isOverride?'<span class="tag tag-gold" style="font-size:.6rem">override</span>':''}</strong><span>${desc}</span></div><div class="toggle-sw${on?' on':''}" onclick="toggleUserPerm('${userId}','${code}',${on})"></div></div>`; }).join('')}`;
+}
+async function toggleUserPerm(userId,perm,current) {
+  if (!isSuperAdmin()) { toast('Sem permissão','error'); return; }
+  const novoValor=!current;
+  try { const {error}=await db.rpc('toggle_user_permission',{p_target_user:userId,p_perm:perm,p_ativo:novoValor}); if (error) throw error; }
+  catch(e) { const {error}=await q('user_permissions').upsert({user_id:userId,permission_code:perm,ativo:novoValor},{onConflict:'user_id,permission_code'}); if (error) { toast(error.message,'error'); return; } }
+  toast(`Permissão ${novoValor?'concedida':'removida'}`);
+  const userName=document.querySelector('#modal-container .modal-hdr h2')?.textContent.replace('Permissões — ','')||'';
+  openUserPermModal(userId,userName);
+}
+
+// ════════════════════════════════════════════════════════════
+//  RELATÓRIOS — setor pré-fixado, mesma lógica do dashboard
+// ════════════════════════════════════════════════════════════
+async function renderRelatorios() {
+  if (!hasPerm('ver_relatorios')) { $('page-content').innerHTML=`<div class="empty"><div class="empty-ico">🔐</div><p>Sem permissão.</p></div>`; return; }
+  $('page-content').innerHTML=loadingPage();
+  const now=new Date();
+  if (!relFiltroInicio) relFiltroInicio=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  if (!relFiltroFim)    relFiltroFim=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().slice(0,10);
+  // Setor: começa fixo no do usuário; só muda se tiver filtrar_setor_dashboard
+  if (!relSetorFiltro) relSetorFiltro=currentUser?.setor_id||null;
+  const {data:allSetores}=await q('setores').select('id,nome').order('nome');
+  const sid=relSetorFiltro||currentUser?.setor_id||null;
+
+  let qEv=q('eventos').select('*').order('data',{ascending:false}).gte('data',relFiltroInicio).lte('data',relFiltroFim);
+  let qCong=q('congregacoes').select('id,nome,setor_id');
+  let qSet=q('setores').select('id,nome');
+  let qMem=q('membros').select('congregacao_id,setor_id');
+  if (sid) { qEv=qEv.eq('setor_id',sid); qCong=qCong.eq('setor_id',sid); qSet=qSet.eq('id',sid); qMem=qMem.eq('setor_id',sid); }
+
+  const [rEv,rCong,rSet,rMem]=await Promise.all([qEv,qCong,qSet,qMem]);
+  const eventos=rEv.data||[], congs=rCong.data||[], setores=rSet.data||[];
+  const memCount=id=>(rMem.data||[]).filter(m=>m.congregacao_id===id).length;
+  const cultos=eventos.filter(e=>e.tipo==='culto').length, genEvt=eventos.filter(e=>e.tipo==='evento').length, saidas=eventos.filter(e=>e.tipo==='saida').length;
+  const totalPart=eventos.reduce((s,e)=>s+(e.participantes||0),0), totalOfer=eventos.reduce((s,e)=>s+(e.ofertas||0),0), totalDiz=eventos.reduce((s,e)=>s+(e.dizimos||0),0), totalConv=eventos.reduce((s,e)=>s+(e.conversoes||0),0);
+
+  const setorSelectorHtml=canFilterSetores()?`<div class="form-group" style="margin:0"><label>Setor</label><select id="rel-setor" onchange="relSetorFiltro=this.value||currentUser?.setor_id||null" style="min-width:160px">${(allSetores||[]).map(s=>`<option value="${s.id}" ${s.id===sid?'selected':''}>${escHtml(s.nome)}</option>`).join('')}</select></div>`:
+    `<div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--txt2)"><span>📍</span><strong>${escHtml((allSetores||[]).find(s=>s.id===sid)?.nome||currentUserSetor?.nome||'—')}</strong><span class="tag tag-blue" style="font-size:.65rem">fixo</span></div>`;
+
+  $('page-content').innerHTML=`
+  <div class="sec-hdr">
+    <h2>Relatórios e Estatísticas</h2>
+    <div class="sec-actions">${hasPerm('exportar_dados')?`<button class="btn btn-primary btn-sm" onclick="exportarPDF()">📄 PDF</button>`:''}</div>
+  </div>
+  <div class="filter-bar">
+    <div class="filter-title">📅 Filtro de Período e Setor</div>
+    <div class="filter-fields">
+      ${setorSelectorHtml}
+      <div class="form-group" style="margin:0"><label>Data Inicial</label><input type="date" id="rel-inicio" value="${relFiltroInicio}" onchange="relFiltroInicio=this.value"/></div>
+      <div class="form-group" style="margin:0"><label>Data Final</label><input type="date" id="rel-fim" value="${relFiltroFim}" onchange="relFiltroFim=this.value"/></div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <button class="btn btn-primary btn-sm" onclick="${canFilterSetores()?"relSetorFiltro=$('rel-setor')?.value||currentUser?.setor_id||null;":''} renderRelatorios()">🔍 Filtrar</button>
+        <button class="btn btn-secondary btn-sm" onclick="relFiltroInicio='';relFiltroFim='';relSetorFiltro=currentUser?.setor_id||null;renderRelatorios()">↺ Limpar</button>
+      </div>
+    </div>
+    <div class="filter-presets">
+      <button class="btn btn-secondary btn-sm" onclick="setRelFiltro('mes')">Este mês</button>
+      <button class="btn btn-secondary btn-sm" onclick="setRelFiltro('quinzena1')">1ª quinzena</button>
+      <button class="btn btn-secondary btn-sm" onclick="setRelFiltro('quinzena2')">2ª quinzena</button>
+      <button class="btn btn-secondary btn-sm" onclick="setRelFiltro('semana')">Esta semana</button>
+      <button class="btn btn-secondary btn-sm" onclick="setRelFiltro('ano')">Este ano</button>
+    </div>
+  </div>
+  <div class="stats-grid stats-4" style="margin-bottom:26px">
+    ${statCard('⛪','ic-gold',cultos,'Cultos','')}
+    ${statCard('🎉','ic-blue',genEvt,'Eventos','')}
+    ${statCard('🚶','ic-teal',saidas,'Saídas Evang.','')}
+    ${statCard('✝','ic-violet',totalConv,'Conversões','')}
+  </div>
+  <div class="stats-grid stats-4" style="margin-bottom:26px">
+    ${statCard('👥','ic-blue',totalPart,'Participantes','')}
+    ${canSeeFinanceiro()?statCard('💰','ic-teal',fmtMoney(totalOfer),'Total Ofertas',''):''}
+    ${canSeeFinanceiro()?statCard('💎','ic-violet',fmtMoney(totalDiz),'Total Dízimos',''):''}
+    ${canSeeFinanceiro()?statCard('💵','ic-gold',fmtMoney(totalOfer+totalDiz),'Total Arrecadado',''):''}
+  </div>
+  <div class="charts-grid" style="margin-bottom:26px">
+    <div class="chart-card chart-span2"><h3>Participantes por Mês</h3><p>Acumulado de todos os eventos</p><canvas id="chart-line" height="100"></canvas></div>
+    <div class="chart-card"><h3>Membros por Congregação</h3><p>Top congregações</p><canvas id="chart-pie" height="200"></canvas></div>
+    ${canSeeFinanceiro()?`<div class="chart-card"><h3>Financeiro Mensal</h3><p>Ofertas vs Dízimos</p><canvas id="chart-fin" height="200"></canvas></div>`:''}
+  </div>
+  <div class="sec-hdr"><h2>Resumo por Setor</h2></div>
+  <div class="responsive-table-wrap" style="margin-bottom:28px">
+    <div class="rtable-header">
+      <div>Setor</div><div>Cong.</div><div>Membros</div><div>Eventos</div><div>Conv.</div>
+      ${canSeeFinanceiro()?'<div>Ofertas</div><div>Dízimos</div>':''}
+    </div>
+    ${setores.map(s=>{ const sCongs=congs.filter(c=>c.setor_id===s.id), sEvs=eventos.filter(e=>e.setor_id===s.id); const sMems=(rMem.data||[]).filter(m=>sCongs.some(c=>c.id===m.congregacao_id)).length, sOfer=sEvs.reduce((x,e)=>x+(e.ofertas||0),0), sDiz=sEvs.reduce((x,e)=>x+(e.dizimos||0),0), sConv=sEvs.reduce((x,e)=>x+(e.conversoes||0),0); return `<div class="rtable-row"><div class="fw5">${escHtml(s.nome)}</div><div>${sCongs.length}</div><div>${sMems}</div><div>${sEvs.length}</div><div>${sConv}</div>${canSeeFinanceiro()?`<div>${fmtMoney(sOfer)}</div><div>${fmtMoney(sDiz)}</div>`:''}</div>`; }).join('')}
+    <div class="rtable-row rtable-total"><div class="fw5">TOTAL</div><div>${congs.length}</div><div>${(rMem.data||[]).length}</div><div>${eventos.length}</div><div>${totalConv}</div>${canSeeFinanceiro()?`<div>${fmtMoney(totalOfer)}</div><div>${fmtMoney(totalDiz)}</div>`:''}</div>
+  </div>
+  <div class="sec-hdr"><h2>Todos os Eventos <span class="count-badge">${eventos.length}</span></h2></div>
+  <div class="responsive-table-wrap">
+    ${eventos.map(e=>{ const cong=congs.find(c=>c.id===e.congregacao_id); return `<div class="ev-card"><div class="ev-card-left"><div class="act-dot" style="background:${tipoColor(e.tipo)}"></div><div><div class="fw5 fs-sm">${tipoIcon(e.tipo)} ${tipoLabel(e.tipo)}</div><div class="fs-xs c3">${escHtml(cong?.nome||'—')} · ${escHtml(e.resumo||'—')}</div></div></div><div class="ev-card-right"><span class="act-time">${fmtDate(e.data)}</span><span class="tag">${e.participantes||0} pess.</span>${canSeeFinanceiro()&&tipoFinanceiro(e.tipo)?`<span class="tag tag-gold">${fmtMoney(e.ofertas||0)}</span>`:''}</div></div>`; }).join('')||'<p class="c3" style="padding:20px;text-align:center">Nenhum evento no período.</p>'}
+  </div>`;
+
+  const byMonth=Array(12).fill(0); eventos.forEach(e=>{ const m=new Date(e.data+'T00:00:00').getMonth(); byMonth[m]+=(e.participantes||0); });
+  const meses=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const lCtx=document.getElementById('chart-line'); if (lCtx) chartInstances.line=new Chart(lCtx,{type:'line',data:{labels:meses,datasets:[{label:'Participantes',data:byMonth,borderColor:'var(--gold)',backgroundColor:'rgba(201,168,76,.1)',tension:.4,fill:true,pointRadius:3}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8'}}},scales:{x:{ticks:{color:'#94a3b8'},grid:{color:'rgba(255,255,255,.03)'}},y:{ticks:{color:'#94a3b8'},grid:{color:'rgba(255,255,255,.05)'}}}}});
+  const top6=congs.slice(0,6); const pCtx=document.getElementById('chart-pie'); if (pCtx) chartInstances.pie=new Chart(pCtx,{type:'doughnut',data:{labels:top6.map(c=>c.nome.split('—')[0].trim()),datasets:[{data:top6.map(c=>memCount(c.id)),backgroundColor:['rgba(201,168,76,.8)','rgba(59,130,246,.8)','rgba(20,184,166,.8)','rgba(244,63,94,.8)','rgba(139,92,246,.8)','rgba(249,115,22,.8)'],borderWidth:0,hoverOffset:6}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8'},position:'bottom'}},cutout:'60%'}});
+  if (canSeeFinanceiro()) { const oferMes=Array(12).fill(0),dizMes=Array(12).fill(0); eventos.forEach(e=>{ const m=new Date(e.data+'T00:00:00').getMonth(); oferMes[m]+=(e.ofertas||0); dizMes[m]+=(e.dizimos||0); }); const fCtx=document.getElementById('chart-fin'); if (fCtx) chartInstances.fin=new Chart(fCtx,{type:'bar',data:{labels:meses,datasets:[{label:'Ofertas',data:oferMes,backgroundColor:'rgba(201,168,76,.75)',borderRadius:6},{label:'Dízimos',data:dizMes,backgroundColor:'rgba(20,184,166,.55)',borderRadius:6}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8'}}},scales:{x:{ticks:{color:'#94a3b8'},grid:{color:'rgba(255,255,255,.03)'}},y:{ticks:{color:'#94a3b8',callback:v=>'R$'+v},grid:{color:'rgba(255,255,255,.05)'}}}}});}
+}
+function setRelFiltro(tipo) {
+  const now=new Date(),ano=now.getFullYear(),mes=now.getMonth()+1;
+  const mesStr=String(mes).padStart(2,'0'),ultimoDia=new Date(ano,mes,0).getDate();
+  switch(tipo) {
+    case 'mes': relFiltroInicio=`${ano}-${mesStr}-01`; relFiltroFim=`${ano}-${mesStr}-${ultimoDia}`; break;
+    case 'quinzena1': relFiltroInicio=`${ano}-${mesStr}-01`; relFiltroFim=`${ano}-${mesStr}-15`; break;
+    case 'quinzena2': relFiltroInicio=`${ano}-${mesStr}-16`; relFiltroFim=`${ano}-${mesStr}-${ultimoDia}`; break;
+    case 'semana': { const d=new Date(); d.setDate(d.getDate()-d.getDay()); const f=new Date(d); f.setDate(d.getDate()+6); relFiltroInicio=d.toISOString().slice(0,10); relFiltroFim=f.toISOString().slice(0,10); break; }
+    case 'ano': relFiltroInicio=`${ano}-01-01`; relFiltroFim=`${ano}-12-31`; break;
+  }
+  renderRelatorios();
+}
+async function exportarPDF() {
+  if (!hasPerm('exportar_dados')) { toast('Sem permissão','error'); return; }
+  const {jsPDF}=window.jspdf; if (!jsPDF) { toast('Biblioteca não carregada','error'); return; }
+  toast('Gerando PDF...','info');
+  const sid=relSetorFiltro||currentUser?.setor_id||null;
+  let qEv=q('eventos').select('*').order('data',{ascending:false}).gte('data',relFiltroInicio).lte('data',relFiltroFim);
+  let qCong=q('congregacoes').select('*').order('nome'), qSet=q('setores').select('*').order('nome'), qMem=q('membros').select('congregacao_id');
+  if (sid) { qEv=qEv.eq('setor_id',sid); qCong=qCong.eq('setor_id',sid); qSet=qSet.eq('id',sid); qMem=qMem.eq('setor_id',sid); }
+  const [rEv,rCong,rSet,rMem]=await Promise.all([qEv,qCong,qSet,qMem]);
+  const eventos=rEv.data||[],congs=rCong.data||[],setores=rSet.data||[];
+  const memCount=id=>(rMem.data||[]).filter(m=>m.congregacao_id===id).length;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'}); const W=210,margin=16; let y=20;
+  doc.setFillColor(9,12,24); doc.rect(0,0,W,44,'F');
+  doc.setTextColor(201,168,76); doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.text('EclesiaSync',margin,18);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(148,163,184);
+  doc.text('Sistema de Gestão Eclesiástica',margin,25);
+  doc.text(`Período: ${fmtDate(relFiltroInicio)} a ${fmtDate(relFiltroFim)}`,margin,31);
+  doc.text(`Gerado por: ${currentUser?.nome||'—'} · ${new Date().toLocaleDateString('pt-BR')}`,margin,37); y=54;
+  const totalOfer=eventos.reduce((s,e)=>s+(e.ofertas||0),0), totalDiz=eventos.reduce((s,e)=>s+(e.dizimos||0),0), totalConv=eventos.reduce((s,e)=>s+(e.conversoes||0),0), totalPart=eventos.reduce((s,e)=>s+(e.participantes||0),0);
+  doc.setFontSize(13); doc.setTextColor(201,168,76); doc.setFont('helvetica','bold'); doc.text('Resumo Geral',margin,y); y+=8;
+  const summaryBody=[['Total de Setores',setores.length],['Total de Congregações',congs.length],['Total de Membros',(rMem.data||[]).length],['Total de Eventos',eventos.length],['Cultos',eventos.filter(e=>e.tipo==='culto').length],['Saídas Evangelísticas',eventos.filter(e=>e.tipo==='saida').length],['Total de Participantes',totalPart],['Total de Conversões',totalConv]];
+  if (canSeeFinanceiro()) summaryBody.push(['Total de Ofertas',fmtMoney(totalOfer)],['Total de Dízimos',fmtMoney(totalDiz)],['Total Arrecadado',fmtMoney(totalOfer+totalDiz)]);
+  doc.autoTable({startY:y,margin:{left:margin,right:margin},head:[['Indicador','Valor']],body:summaryBody,theme:'grid',headStyles:{fillColor:[9,12,24],textColor:[201,168,76],fontStyle:'bold'},alternateRowStyles:{fillColor:[245,245,250]},styles:{fontSize:9}});
+  y=doc.lastAutoTable.finalY+12;
+  for (const s of setores) {
+    if (y>250) { doc.addPage(); y=20; }
+    doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setFillColor(240,238,230); doc.rect(margin,y-5,W-margin*2,10,'F'); doc.setTextColor(100,80,10);
+    doc.text(`Setor: ${s.nome}`,margin+2,y+2); y+=12;
+    const sCongs=congs.filter(c=>c.setor_id===s.id); if (!sCongs.length) { doc.setFontSize(9); doc.setTextColor(150,150,150); doc.text('Nenhuma congregação.',margin+4,y); y+=8; continue; }
+    for (const c of sCongs) {
+      if (y>255) { doc.addPage(); y=20; }
+      const cEvs=eventos.filter(e=>e.congregacao_id===c.id), cPart=cEvs.reduce((x,e)=>x+(e.participantes||0),0), cConv=cEvs.reduce((x,e)=>x+(e.conversoes||0),0), cOfer=cEvs.reduce((x,e)=>x+(e.ofertas||0),0), cDiz=cEvs.reduce((x,e)=>x+(e.dizimos||0),0);
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(50,50,50); doc.text(`  ⛪ ${c.nome}`,margin+2,y);
+      doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
+      const infoStr=`Membros:${memCount(c.id)} | Eventos:${cEvs.length} | Part:${cPart} | Conv:${cConv}${canSeeFinanceiro()?` | Of:${fmtMoney(cOfer)} | Díz:${fmtMoney(cDiz)}`:''}`;
+      doc.text(infoStr,margin+4,y+5); y+=12;
+      if (cEvs.length) { const cols=['Data','Tipo','Resumo','Part.','Conv.']; const colW=[20,30,44,12,12]; if (canSeeFinanceiro()) { cols.push('Ofertas','Dízimos'); colW.push(24,24); } doc.autoTable({startY:y,margin:{left:margin+6,right:margin},head:[cols],body:cEvs.map(e=>{const row=[fmtDate(e.data),tipoLabel(e.tipo),(e.resumo||'').slice(0,40),e.participantes||0,e.conversoes||0]; if (canSeeFinanceiro()) { row.push(fmtMoney(e.ofertas),fmtMoney(e.dizimos)); } return row;}),theme:'striped',headStyles:{fillColor:[30,30,50],textColor:[201,168,76],fontSize:7,fontStyle:'bold'},styles:{fontSize:7.5},columnStyles:Object.fromEntries(colW.map((w,i)=>[i,{cellWidth:w}]))}); y=doc.lastAutoTable.finalY+6; }
+    }
+    y+=4;
+  }
+  doc.save(`EclesiaSync-Relatorio-${relFiltroInicio}-${relFiltroFim}.pdf`);
+  toast('PDF gerado!');
+}
+
+// ════════════════════════════════════════════════════════════
+//  FREQUÊNCIA — CORRIGIDA (cross-setor via participante_ids)
+// ════════════════════════════════════════════════════════════
+async function renderFrequencia() {
+  if (!hasPerm('ver_frequencia_usuarios')) { $('page-content').innerHTML=`<div class="empty"><div class="empty-ico">🔐</div><p>Sem permissão para acessar frequência.</p></div>`; return; }
+  $('page-content').innerHTML=loadingPage();
+  const now=new Date();
+  if (!freqFiltroInicio) freqFiltroInicio=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  if (!freqFiltroFim)    freqFiltroFim=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().slice(0,10);
+  const {data:setores}=await q('setores').select('id,nome').order('nome');
+  if (!freqSetorFiltro) freqSetorFiltro=currentUser?.setor_id||'';
+  const sid=freqSetorFiltro||currentUser?.setor_id||null;
+
+  // FIX: buscar TODOS os eventos do período (sem filtrar por setor_id)
+  // porque o usuário pode estar em evento de outro setor via participante_ids
+  // Os usuários sim são filtrados por setor
+  let qUsuarios=q('sistema_usuarios').select('id,nome,role,cargo,setor_id,congregacao,ativo').eq('ativo',true).order('nome');
+  if (sid) qUsuarios=qUsuarios.eq('setor_id',sid);
+
+  // Buscar eventos — todos no período (sem filtro de setor) para capturar cross-setor
+  const qEventos=q('eventos').select('id,tipo,data,participante_ids,setor_id,congregacao_id,resumo').gte('data',freqFiltroInicio).lte('data',freqFiltroFim);
+
+  const [{data:usuarios},{data:eventos}]=await Promise.all([qUsuarios,qEventos]);
+  const usuariosList=usuarios||[], eventosList=eventos||[];
+
+  // Para estatísticas, filtrar eventos do setor do usuário
+  const eventosSetor=sid?eventosList.filter(e=>e.setor_id===sid):eventosList;
+  const totalEventos=eventosSetor.length, totalCultos=eventosSetor.filter(e=>e.tipo==='culto').length;
+
+  const freqData=usuariosList.map(u=>{
+    // Participações: o usuário pode estar em eventos de qualquer setor
+    const evParticipou=eventosList.filter(e=>(e.participante_ids||[]).includes(u.id));
+    // Para frequência percentual, comparar com eventos do setor do usuário
+    const evSetorUsuario=sid?eventosList.filter(e=>e.setor_id===(u.setor_id||sid)):eventosList;
+    const totalEv=evSetorUsuario.length, totalCult=evSetorUsuario.filter(e=>e.tipo==='culto').length;
+    const cultosParticipou=evParticipou.filter(e=>e.tipo==='culto').length;
+    const pctTotal=totalEv>0?Math.round((evParticipou.filter(e=>evSetorUsuario.some(es=>es.id===e.id)).length/totalEv)*100):0;
+    const pctCultos=totalCult>0?Math.round((evParticipou.filter(e=>e.tipo==='culto'&&evSetorUsuario.some(es=>es.id===e.id)).length/totalCult)*100):0;
+    const setorNome=(setores||[]).find(s=>s.id===u.setor_id)?.nome||'—';
+    return {...u,evParticipou,cultosParticipou,totalParticipou:evParticipou.length,pctTotal,pctCultos,setorNome};
+  }).sort((a,b)=>b.pctTotal-a.pctTotal);
+
+  $('page-content').innerHTML=`
+  <div class="sec-hdr">
+    <h2>Frequência de Usuários <span class="count-badge">${usuariosList.length} usuários</span></h2>
+    <div class="sec-actions">
+      ${hasPerm('exportar_dados')?`<button class="btn btn-primary btn-sm" onclick="exportarFrequenciaPDF()">📄 PDF</button><button class="btn btn-secondary btn-sm" onclick="exportarFrequenciaExcel()">📊 Excel</button>`:''}
+    </div>
+  </div>
+  <div class="filter-bar">
+    <div class="filter-title">📅 Filtro</div>
+    <div class="filter-fields">
+      ${canFilterSetores()?`<div class="form-group" style="margin:0"><label>Setor</label><select id="freq-setor" style="min-width:160px">${(setores||[]).map(s=>`<option value="${s.id}" ${s.id===sid?'selected':''}>${escHtml(s.nome)}</option>`).join('')}</select></div>`:`<div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--txt2)"><span>📍</span><strong>${escHtml((setores||[]).find(s=>s.id===sid)?.nome||currentUserSetor?.nome||'—')}</strong></div>`}
+      <div class="form-group" style="margin:0"><label>Início</label><input type="date" id="freq-inicio" value="${freqFiltroInicio}" onchange="freqFiltroInicio=this.value"/></div>
+      <div class="form-group" style="margin:0"><label>Fim</label><input type="date" id="freq-fim" value="${freqFiltroFim}" onchange="freqFiltroFim=this.value"/></div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <button class="btn btn-primary btn-sm" onclick="${canFilterSetores()?"freqSetorFiltro=$('freq-setor')?.value||'';":''} renderFrequencia()">🔍 Filtrar</button>
+        <button class="btn btn-secondary btn-sm" onclick="freqFiltroInicio='';freqFiltroFim='';freqSetorFiltro='';renderFrequencia()">↺</button>
+      </div>
+    </div>
+    <div class="filter-presets">
+      <button class="btn btn-secondary btn-sm" onclick="setFreqFiltro('mes')">Este mês</button>
+      <button class="btn btn-secondary btn-sm" onclick="setFreqFiltro('quinzena1')">1ª quinzena</button>
+      <button class="btn btn-secondary btn-sm" onclick="setFreqFiltro('quinzena2')">2ª quinzena</button>
+      <button class="btn btn-secondary btn-sm" onclick="setFreqFiltro('semana')">Esta semana</button>
+      <button class="btn btn-secondary btn-sm" onclick="setFreqFiltro('ano')">Este ano</button>
+    </div>
+  </div>
+  <div class="stats-grid stats-4" style="margin-bottom:24px">
+    ${statCard('📋','ic-gold',totalEventos,'Eventos','no período')}
+    ${statCard('⛪','ic-blue',totalCultos,'Cultos','no período')}
+    ${statCard('👥','ic-teal',usuariosList.length,'Usuários','monitorados')}
+    ${statCard('📈','ic-violet',freqData.length>0?`${freqData[0]?.pctTotal||0}%`:'—','Maior Freq.',freqData[0]?.nome?.split(' ')[0]||'')}
+  </div>
+  <div class="freq-legend">
+    <span class="freq-leg-item"><span class="freq-dot" style="background:#14b8a6"></span>≥75% Alta</span>
+    <span class="freq-leg-item"><span class="freq-dot" style="background:#f59e0b"></span>50–74% Média</span>
+    <span class="freq-leg-item"><span class="freq-dot" style="background:#f43f5e"></span>&lt;50% Baixa</span>
+  </div>
+  <div class="freq-list">
+    ${freqData.length?freqData.map(u=>{
+      const corGeral=u.pctTotal>=75?'#14b8a6':u.pctTotal>=50?'#f59e0b':'#f43f5e';
+      const corCultos=u.pctCultos>=75?'#14b8a6':u.pctCultos>=50?'#f59e0b':'#f43f5e';
+      return `<div class="freq-item">
+        <div class="freq-item-user">
+          <div class="av av-sm" style="background:${avatarColor(u.nome)}">${initials(u.nome)}</div>
+          <div>
+            <div class="fw5 fs-sm">${escHtml(u.nome)}</div>
+            <div class="fs-xs c3">${escHtml(u.cargo||'—')} · ${escHtml(u.congregacao||'—')}</div>
+          </div>
+        </div>
+        <div class="freq-item-bars">
+          <div class="freq-bar-row">
+            <span class="freq-bar-label">Geral</span>
+            <div class="freq-bar-wrap"><div class="freq-bar" style="width:${u.pctTotal}%;background:${corGeral}"></div></div>
+            <span class="freq-pct" style="color:${corGeral}">${u.pctTotal}%</span>
+          </div>
+          <div class="freq-bar-row">
+            <span class="freq-bar-label">Cultos</span>
+            <div class="freq-bar-wrap"><div class="freq-bar" style="width:${u.pctCultos}%;background:${corCultos}"></div></div>
+            <span class="freq-pct" style="color:${corCultos}">${u.pctCultos}%</span>
+          </div>
+        </div>
+        <div class="freq-item-info">
+          <span class="tag fs-xs">${u.totalParticipou}/${totalEventos} ev.</span>
+          <span class="tag fs-xs">${u.cultosParticipou}/${totalCultos} cul.</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="openFreqDetalhe('${u.id}','${escHtml(u.nome)}')">Ver →</button>
+      </div>`;
+    }).join(''):`<div class="empty"><div class="empty-ico">📈</div><p>Nenhum dado encontrado para o período.</p></div>`}
+  </div>
+  <div class="sec-hdr" style="margin-top:28px"><h2>📊 Gráfico de Frequência</h2></div>
+  <div class="chart-card" style="margin-bottom:28px"><h3>Top Usuários por Frequência Geral</h3><p>No período selecionado</p><canvas id="chart-freq" height="80"></canvas></div>`;
+
+  const top10=freqData.slice(0,10);
+  const fCtx=document.getElementById('chart-freq');
+  if (fCtx&&top10.length) chartInstances.freq=new Chart(fCtx,{type:'bar',data:{labels:top10.map(u=>u.nome.split(' ')[0]),datasets:[{label:'Freq. Geral (%)',data:top10.map(u=>u.pctTotal),backgroundColor:top10.map(u=>u.pctTotal>=75?'rgba(20,184,166,.8)':u.pctTotal>=50?'rgba(245,158,11,.8)':'rgba(244,63,94,.8)'),borderRadius:8},{label:'Freq. Cultos (%)',data:top10.map(u=>u.pctCultos),backgroundColor:'rgba(201,168,76,.4)',borderRadius:8}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8'}}},scales:{x:{ticks:{color:'#94a3b8'},grid:{color:'rgba(255,255,255,.03)'}},y:{min:0,max:100,ticks:{color:'#94a3b8',callback:v=>v+'%'},grid:{color:'rgba(255,255,255,.05)'}}}}});
+}
+
+function setFreqFiltro(tipo) {
+  const now=new Date(),ano=now.getFullYear(),mes=now.getMonth()+1;
+  const mesStr=String(mes).padStart(2,'0'),ultimoDia=new Date(ano,mes,0).getDate();
+  switch(tipo) {
+    case 'mes': freqFiltroInicio=`${ano}-${mesStr}-01`; freqFiltroFim=`${ano}-${mesStr}-${ultimoDia}`; break;
+    case 'quinzena1': freqFiltroInicio=`${ano}-${mesStr}-01`; freqFiltroFim=`${ano}-${mesStr}-15`; break;
+    case 'quinzena2': freqFiltroInicio=`${ano}-${mesStr}-16`; freqFiltroFim=`${ano}-${mesStr}-${ultimoDia}`; break;
+    case 'semana': { const d=new Date(); d.setDate(d.getDate()-d.getDay()); const f=new Date(d); f.setDate(d.getDate()+6); freqFiltroInicio=d.toISOString().slice(0,10); freqFiltroFim=f.toISOString().slice(0,10); break; }
+    case 'ano': freqFiltroInicio=`${ano}-01-01`; freqFiltroFim=`${ano}-12-31`; break;
+  }
+  renderFrequencia();
+}
+
+async function openFreqDetalhe(userId,userName) {
+  showModal(`<div class="modal-hdr"><span>📈</span><h2>Frequência — ${escHtml(userName)}</h2><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body" id="freq-detalhe-body"><div class="loading-page"><div class="spinner"></div></div></div>`);
+  // Busca TODOS os eventos do período (sem filtro setor) para capturar cross-setor
+  const {data:eventos}=await q('eventos').select('id,tipo,data,resumo,congregacao_id,setor_id,participante_ids').gte('data',freqFiltroInicio).lte('data',freqFiltroFim);
+  const sid=freqSetorFiltro||currentUser?.setor_id||null;
+  // Eventos do setor do usuário para base de cálculo
+  const eventosBase=sid?(eventos||[]).filter(e=>e.setor_id===sid):(eventos||[]);
+  const eventosDoUsuario=(eventosBase).filter(e=>(e.participante_ids||[]).includes(userId));
+  const congIds=[...new Set((eventosBase).map(e=>e.congregacao_id).filter(Boolean))];
+  const {data:congs}=congIds.length?await q('congregacoes').select('id,nome').in('id',congIds):{data:[]};
+  const congNome=id=>(congs||[]).find(c=>c.id===id)?.nome||'—';
+  const totalEv=eventosBase.length, partEv=eventosDoUsuario.length;
+  const pct=totalEv>0?Math.round((partEv/totalEv)*100):0;
+  $('freq-detalhe-body').innerHTML=`
+  <div style="text-align:center;margin-bottom:20px">
+    <div class="stat-val" style="font-size:2.5rem;color:${pct>=75?'var(--teal)':pct>=50?'#f59e0b':'var(--rose)'}">${pct}%</div>
+    <div class="fs-sm c2">Frequência geral no período</div><div class="fs-xs c3">${partEv} de ${totalEv} eventos do setor</div>
+  </div>
+  <div style="border-bottom:1px solid var(--bdr2);margin-bottom:14px;padding-bottom:10px">
+    <div class="fs-xs c3 fw6" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Participou de:</div>
+    ${eventosDoUsuario.length?eventosDoUsuario.map(e=>`<div class="act-item" style="margin-bottom:6px"><div class="act-dot" style="background:${tipoColor(e.tipo)}"></div><div class="f1"><div class="fw5 fs-sm">${tipoIcon(e.tipo)} ${tipoLabel(e.tipo)}</div><div class="fs-xs c3">${escHtml(congNome(e.congregacao_id))}</div></div><span class="act-time">${fmtDate(e.data)}</span></div>`).join(''):'<p class="c3 fs-sm" style="text-align:center;padding:12px">Nenhuma participação registrada.</p>'}
+  </div>
+  <div class="fs-xs c3 fw6" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Ausências:</div>
+  ${eventosBase.filter(e=>!(e.participante_ids||[]).includes(userId)).map(e=>`<div class="act-item" style="margin-bottom:6px;opacity:.45"><div class="act-dot" style="background:#475569"></div><div class="f1"><div class="fw5 fs-sm">${tipoIcon(e.tipo)} ${tipoLabel(e.tipo)}</div><div class="fs-xs c3">${escHtml(congNome(e.congregacao_id))}</div></div><span class="act-time">${fmtDate(e.data)}</span></div>`).join('')||'<p class="c3 fs-sm">Sem ausências.</p>'}`;
+}
+
+// ── EXPORTAR FREQUÊNCIA PDF ───────────────────────────────────
+async function exportarFrequenciaPDF() {
+  if (!hasPerm('exportar_dados')) { toast('Sem permissão','error'); return; }
+  const {jsPDF}=window.jspdf; if (!jsPDF) { toast('Biblioteca não carregada','error'); return; }
+  toast('Gerando PDF...','info');
+  const sid=freqSetorFiltro||currentUser?.setor_id||null;
+  let qU=q('sistema_usuarios').select('id,nome,role,cargo,setor_id,congregacao,ativo').eq('ativo',true).order('nome');
+  if (sid) qU=qU.eq('setor_id',sid);
+  const [{data:usuarios},{data:eventos},{data:setores}]=await Promise.all([qU,q('eventos').select('id,tipo,data,participante_ids,setor_id').gte('data',freqFiltroInicio).lte('data',freqFiltroFim),q('setores').select('id,nome')]);
+  const eventosBase=sid?(eventos||[]).filter(e=>e.setor_id===sid):(eventos||[]);
+  const totalEv=eventosBase.length, totalCultos=eventosBase.filter(e=>e.tipo==='culto').length;
+  const freqData=(usuarios||[]).map(u=>{
+    const evP=eventosBase.filter(e=>(e.participante_ids||[]).includes(u.id));
+    const pctTotal=totalEv>0?Math.round((evP.length/totalEv)*100):0;
+    const pctCultos=totalCultos>0?Math.round((evP.filter(e=>e.tipo==='culto').length/totalCultos)*100):0;
+    return {nome:u.nome,cargo:u.cargo||'—',setorNome:(setores||[]).find(s=>s.id===u.setor_id)?.nome||'—',congregacao:u.congregacao||'—',partTotal:evP.length,cultosPart:evP.filter(e=>e.tipo==='culto').length,pctTotal,pctCultos};
+  }).sort((a,b)=>b.pctTotal-a.pctTotal);
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'}); const W=210,margin=16; let y=20;
+  doc.setFillColor(9,12,24); doc.rect(0,0,W,44,'F'); doc.setTextColor(201,168,76); doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.text('EclesiaSync',margin,18);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(148,163,184);
+  doc.text('Relatório de Frequência de Usuários',margin,25);
+  doc.text(`Período: ${fmtDate(freqFiltroInicio)} a ${fmtDate(freqFiltroFim)}`,margin,31);
+  doc.text(`Gerado por: ${currentUser?.nome||'—'} · ${new Date().toLocaleDateString('pt-BR')}`,margin,37); y=54;
+  doc.setFontSize(13); doc.setTextColor(201,168,76); doc.setFont('helvetica','bold'); doc.text('Frequência por Usuário',margin,y); y+=8;
+  doc.autoTable({startY:y,margin:{left:margin,right:margin},head:[['Usuário','Cargo','Setor','Freq. Geral','Freq. Cultos','Part./Total','Cultos/Total']],body:freqData.map(u=>[u.nome,u.cargo,u.setorNome,`${u.pctTotal}%`,`${u.pctCultos}%`,`${u.partTotal}/${totalEv}`,`${u.cultosPart}/${totalCultos}`]),theme:'grid',headStyles:{fillColor:[9,12,24],textColor:[201,168,76],fontStyle:'bold'},alternateRowStyles:{fillColor:[245,245,250]},styles:{fontSize:8.5},didParseCell:function(data){if(data.section==='body'&&data.column.index===3){const p=parseInt(data.cell.text[0]);data.cell.styles.textColor=p>=75?[20,184,166]:p>=50?[245,158,11]:[244,63,94];}}});
+  doc.save(`EclesiaSync-Frequencia-${freqFiltroInicio}-${freqFiltroFim}.pdf`);
+  toast('PDF gerado!');
+}
+
+// ── EXPORTAR FREQUÊNCIA EXCEL (CSV compatível) ───────────────
+async function exportarFrequenciaExcel() {
+  if (!hasPerm('exportar_dados')) { toast('Sem permissão','error'); return; }
+  toast('Gerando Excel...','info');
+  const sid=freqSetorFiltro||currentUser?.setor_id||null;
+  let qU=q('sistema_usuarios').select('id,nome,role,cargo,setor_id,congregacao,ativo').eq('ativo',true).order('nome');
+  if (sid) qU=qU.eq('setor_id',sid);
+  const [{data:usuarios},{data:eventos},{data:setores}]=await Promise.all([qU,q('eventos').select('id,tipo,data,participante_ids,setor_id,resumo').gte('data',freqFiltroInicio).lte('data',freqFiltroFim),q('setores').select('id,nome')]);
+  const eventosBase=sid?(eventos||[]).filter(e=>e.setor_id===sid):(eventos||[]);
+  const totalEv=eventosBase.length, totalCultos=eventosBase.filter(e=>e.tipo==='culto').length;
+  // Aba 1: Resumo por usuário
+  const rows=[['EclesiaSync — Relatório de Frequência'],['Período:',`${fmtDate(freqFiltroInicio)} a ${fmtDate(freqFiltroFim)}`],['Gerado em:',new Date().toLocaleString('pt-BR')],[],['Usuário','Cargo','Setor','Congregação','Freq. Geral (%)','Freq. Cultos (%)','Participações','Cultos Part.','Total Eventos','Total Cultos']];
+  (usuarios||[]).forEach(u=>{
+    const evP=eventosBase.filter(e=>(e.participante_ids||[]).includes(u.id));
+    const pctTotal=totalEv>0?Math.round((evP.length/totalEv)*100):0;
+    const pctCultos=totalCultos>0?Math.round((evP.filter(e=>e.tipo==='culto').length/totalCultos)*100):0;
+    rows.push([u.nome,u.cargo||'—',(setores||[]).find(s=>s.id===u.setor_id)?.nome||'—',u.congregacao||'—',pctTotal,pctCultos,evP.length,evP.filter(e=>e.tipo==='culto').length,totalEv,totalCultos]);
+  });
+  rows.push([]);
+  // Aba 2: detalhamento por evento
+  rows.push(['Data','Tipo','Evento / Resumo','Participantes registrados']);
+  eventosBase.forEach(e=>{
+    const nomes=(e.participante_ids||[]).map(uid=>{ const u=(usuarios||[]).find(x=>x.id===uid); return u?u.nome:'(ext)'; }).join('; ');
+    rows.push([fmtDate(e.data),tipoLabel(e.tipo),e.resumo||'—',nomes||'Nenhum']);
+  });
+  // Gera CSV
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const bom='\uFEFF'; // BOM para Excel reconhecer UTF-8
+  const blob=new Blob([bom+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`EclesiaSync-Frequencia-${freqFiltroInicio}-${freqFiltroFim}.csv`; a.click();
+  URL.revokeObjectURL(url);
+  toast('Excel (CSV) gerado!');
+}
+
+// ════════════════════════════════════════════════════════════
+//  PERMISSÕES — Com criação de Roles customizadas (RBAC)
+// ════════════════════════════════════════════════════════════
+async function renderPermissoes() {
+  if (!isSuperAdmin()&&!hasPerm('editar_permissoes')) { $('page-content').innerHTML=`<div class="empty"><div class="empty-ico">🔐</div><p>Sem permissão.</p></div>`; return; }
+  $('page-content').innerHTML=loadingPage();
+
+  // Busca roles existentes (sistema + customizadas)
+  const {data:rolesDB} = await q('roles').select('*').order('nome');
+  const ROLES_SISTEMA=['admin','dirigente','adjunto','usuario'];
+  const rolesCustom=(rolesDB||[]).filter(r=>!ROLES_SISTEMA.includes(r.nome));
+  const todasRoles=[...ROLES_SISTEMA,...rolesCustom.map(r=>r.nome)];
+  if (!todasRoles.includes(activeRole)) activeRole='admin';
+
+  let {data,error}=await q('role_permissions').select('*').eq('role',activeRole);
+  if (error||!data?.length) {
+    const legacy=await q('permissoes').select('*').eq('role',activeRole);
+    const map={'Gerenciar Setores':'gerenciar_setores','Gerenciar Congregações':'gerenciar_congregacoes','Gerenciar Membros':'gerenciar_membros','Gerenciar Usuários':'gerenciar_usuarios','Visualizar Dashboard':'visualizar_dashboard','Ver Relatórios':'ver_relatorios','Editar Permissões':'editar_permissoes','Exportar Dados':'exportar_dados','Excluir Registros':'excluir_registros','Registrar Eventos':'registrar_eventos','Ver Todos os Setores':'ver_todos_setores','Gerenciar Agenda':'gerenciar_agenda','Ver Frequência de Usuários':'ver_frequencia_usuarios','Visualizar Resumo Financeiro':'visualizar_resumo_financeiro','Filtrar Setor no Dashboard':'filtrar_setor_dashboard'};
+    data=(legacy.data||[]).map(p=>({role:p.role,permission_code:map[p.permissao]||p.permissao,ativo:p.ativo}));
+  }
+  const perms={}; (data||[]).forEach(p=>{ perms[p.permission_code]=p.ativo; });
+  const displayPerms=activeRole==='admin'?Object.fromEntries(Object.keys(PERM_DESC).map(k=>[k,true])):perms;
+  const activeCount=Object.values(displayPerms).filter(Boolean).length;
+
+  const grupos={'Acesso e Visualização':['visualizar_dashboard','ver_relatorios','ver_frequencia_usuarios','exportar_dados'],'Financeiro':['visualizar_resumo_financeiro'],'Filtros e Visibilidade':['filtrar_setor_dashboard','ver_todos_setores'],'Gestão':['gerenciar_setores','gerenciar_congregacoes','gerenciar_membros','gerenciar_usuarios','gerenciar_agenda'],'Operações':['registrar_eventos','excluir_registros'],'Sistema':['editar_permissoes']};
+
+  $('page-content').innerHTML=`
+  <div class="sec-hdr">
+    <h2>Controle de Permissões</h2>
+    ${isSuperAdmin()?`<button class="btn btn-primary btn-sm" onclick="openNewRoleModal()">+ Novo Perfil</button>`:''}
+  </div>
+  <div style="background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.2);border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:.82rem;color:var(--txt2)">
+    ⭐ <strong>admin</strong> = superusuário com acesso total.<br>
+    🔒 <strong>Filtrar Setor</strong> ≠ <strong>Gerenciar Setor</strong>: filtrar é somente leitura; gerenciar permite editar.<br>
+    💰 <strong>Resumo Financeiro</strong>: quando desativado, esconde ofertas/dízimos em todas as telas.<br>
+    🎭 Use <strong>+ Novo Perfil</strong> para criar roles customizadas com permissões específicas.
+  </div>
+  <div class="role-tabs">
+    ${todasRoles.map(r=>`<button class="btn ${r===activeRole?'btn-primary':'btn-secondary'} btn-sm" onclick="setActiveRole('${r}')"><span class="role-badge ${roleCls(r)}">${r}</span></button>`).join('')}
+    ${rolesCustom.map(r=>`<button class="btn btn-danger btn-sm" onclick="delRole('${r.nome}')" title="Excluir perfil">🗑</button>`).join('')}
+  </div>
+  <div class="tbl-wrap" style="max-width:680px">
+    <div style="padding:15px 18px;border-bottom:1px solid var(--bdr2)">
+      <div style="font-family:'Cinzel',serif;font-size:.88rem">Perfil: <span class="role-badge ${roleCls(activeRole)}">${activeRole}</span>
+        ${activeRole==='admin'?'<span class="tag tag-gold" style="margin-left:8px">⭐ Superusuário</span>':''}
+        ${rolesCustom.some(r=>r.nome===activeRole)?`<span class="tag tag-blue" style="margin-left:8px">Perfil Customizado</span>`:''}
+      </div>
+      <div class="fs-xs c3 mt8">${activeCount} permissões ativas</div>
+    </div>
+    <div style="padding:6px 18px">
+      ${Object.entries(grupos).map(([grupo,codes])=>`
+        <div class="perm-group-title">${grupo}</div>
+        ${codes.map(perm=>{ const info=PERM_DESC[perm]; if (!info) return ''; const on=!!displayPerms[perm]; const isAdminRole=activeRole==='admin'; return `<div class="perm-row"><div class="perm-lbl"><strong>${info.label}</strong><span>${info.desc}</span></div><div class="toggle-sw${on?' on':''}" onclick="${isAdminRole?"toast('Admin sempre tem acesso total','info')":`toggleRolePerm('${perm}',${on})`}" style="${isAdminRole?'opacity:.6;cursor:default':''}"></div></div>`; }).join('')}`).join('')}
+    </div>
+  </div>`;
+}
+function setActiveRole(r) { activeRole=r; renderPermissoes(); }
+async function toggleRolePerm(perm,current) {
+  if (!isSuperAdmin()) { toast('Sem permissão','error'); return; }
+  const novoValor=!current;
+  try { const {error}=await db.rpc('toggle_role_permission',{p_role:activeRole,p_perm:perm,p_ativo:novoValor}); if (error) throw error; }
+  catch(e) { await Promise.all([q('role_permissions').upsert({role:activeRole,permission_code:perm,ativo:novoValor},{onConflict:'role,permission_code'}),q('permissoes').upsert({role:activeRole,permissao:perm,ativo:novoValor},{onConflict:'role,permissao'})]); }
+  permissionsCache[perm]=novoValor; toast(`Permissão ${novoValor?'concedida':'removida'}`); renderPermissoes();
+}
+
+// ── RBAC: CRIAR NOVA ROLE ─────────────────────────────────────
+function openNewRoleModal() {
+  if (!isSuperAdmin()) { toast('Apenas admin','error'); return; }
+  showModal(`
+  <div class="modal-hdr"><span>🎭</span><h2>Novo Perfil de Acesso</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Nome do Perfil *</label><input id="role-nome" placeholder="Ex: secretaria, lider_jovens"/><small class="c3 fs-xs">Use letras minúsculas e underscores</small></div>
+    <div class="form-group"><label>Descrição</label><input id="role-desc" placeholder="Descreva as responsabilidades deste perfil"/></div>
+    <div style="border-top:1px solid var(--bdr2);margin:12px 0;padding-top:14px">
+      <div class="fs-xs c3 fw6" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Permissões Iniciais</div>
+      ${Object.entries(PERM_DESC).map(([code,{label,desc}])=>`<div class="perm-row" style="padding:8px 0"><div class="perm-lbl"><strong>${label}</strong><span>${desc}</span></div><input type="checkbox" class="new-role-perm" value="${code}" style="accent-color:var(--gold);width:18px;height:18px"/></div>`).join('')}
+    </div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveNewRole()">🎭 Criar Perfil</button></div>`);
+}
+
+async function saveNewRole() {
+  if (!isSuperAdmin()) { toast('Sem permissão','error'); return; }
+  const nome=($('role-nome')?.value||'').trim().toLowerCase().replace(/\s+/g,'_');
+  const desc=($('role-desc')?.value||'').trim();
+  if (!nome) { toast('Nome do perfil obrigatório','error'); return; }
+  if (['admin','dirigente','adjunto','usuario'].includes(nome)) { toast('Nome reservado pelo sistema','error'); return; }
+  const permsChecked=[...document.querySelectorAll('.new-role-perm:checked')].map(c=>c.value);
+  // Inserir na tabela roles
+  const {error:roleError}=await q('roles').insert({nome,descricao:desc});
+  if (roleError) { toast(roleError.message,'error'); return; }
+  // Inserir permissões
+  if (permsChecked.length) {
+    const permsPayload=permsChecked.map(p=>({role:nome,permission_code:p,ativo:true}));
+    await q('role_permissions').insert(permsPayload);
+  }
+  toast(`Perfil "${nome}" criado!`); closeModal(); activeRole=nome; renderPermissoes();
+}
+
+async function delRole(roleName) {
+  if (!isSuperAdmin()) { toast('Sem permissão','error'); return; }
+  const r=await confirmDialog('Excluir Perfil',`O perfil "${roleName}" será removido. Usuários com este perfil devem ser atualizados.`);
+  if (!r.isConfirmed) return;
+  await Promise.all([q('roles').delete().eq('nome',roleName),q('role_permissions').delete().eq('role',roleName)]);
+  toast(`Perfil "${roleName}" removido!`); activeRole='admin'; renderPermissoes();
+}
+
+// ════════════════════════════════════════════════════════════
+//  MODAL ENGINE
+// ════════════════════════════════════════════════════════════
+function showModal(html) { const mc=$('modal-container'); mc.innerHTML=`<div class="overlay" id="modal-overlay" onclick="handleOverlayClick(event)"><div class="modal" onclick="event.stopPropagation()">${html}</div></div>`; }
+function handleOverlayClick(e) { if (e.target.id==='modal-overlay') closeModal(); }
+function closeModal() { const mc=$('modal-container'); const ov=mc.querySelector('.overlay'); if (ov) { ov.style.opacity='0'; ov.style.transition='opacity .15s'; setTimeout(()=>mc.innerHTML='',150); } }
+
+// ── INIT ─────────────────────────────────────────────────────
+(async function() {
+  try {
+    const saved=JSON.parse(localStorage.getItem('ecclesia_user'));
+    if (saved) {
+      currentUser=saved;
+      await loadPermissions(); await loadUserSetor();
+      dashSetorFiltro=currentUser?.setor_id||null;
+      relSetorFiltro=currentUser?.setor_id||null;
+      startApp(saved);
+    }
+  } catch(e) {}
+  $('inp-user').focus();
+})();
