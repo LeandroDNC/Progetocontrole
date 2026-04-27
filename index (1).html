@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>EclesiaSync — Gestão Eclesiástica</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link
@@ -14,8 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-  <link rel="stylesheet" href="style_v3.css">
-  <link rel="stylesheet" href="style_v3_additions (1).css">
+  <link rel="stylesheet" href="style_v4.css">
 </head>
 
 <body>
@@ -47,7 +46,6 @@
     <div class="mob-overlay" id="mob-overlay"></div>
     <nav class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <div class="logo-icon">✝</div>
         <div class="logo-text">
           <h2>EclesiaSync</h2>
           <p>Gestão Eclesiástica</p>
@@ -86,9 +84,14 @@
       <header class="topbar">
         <button class="hamburger" id="hamburger">☰</button>
         <div class="topbar-title"><span id="page-title">Dashboard</span><small id="topbar-date"></small></div>
+        <div id="theme-panel-container"></div>
         <div class="flex items-center gap12">
-          <div class="notif"><span>🔔</span><span class="notif-dot"></span></div>
+          <!-- <div class="notif"><span>🔔</span><span class="notif-dot"></span></div> -->
           <span class="fs-sm c2 fw5" id="topbar-user"></span>
+          <div class="theme-panel">
+          </div>
+
+
         </div>
       </header>
       <div class="page" id="page-content"></div>
@@ -96,7 +99,8 @@
   </div>
   <div id="modal-container"></div>
 
-  <script src="script_v3 (1).js"></script>
+  <script src="script_v4.js"></script>
+  <script src="theme_engine.js"></script>
 </body>
 
 </html>
