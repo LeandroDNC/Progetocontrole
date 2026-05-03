@@ -28,7 +28,7 @@ function avHtml(nome) {
   return `<div class="av av-sm" style="background:${bg}">${ini}</div>`;
 }
 
-/* ── VERIFICAÇÃO DE LICENÇA ─────────────────────────────── */
+/* ── VERIFICAÇÃO DE LICENÇA ─────────────────────────────── */ 
 window.checkLicenca = async function(userId) {
   const client = getDb();
   if (!client) return true;
